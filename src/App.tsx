@@ -38,6 +38,7 @@ type View = 'menu' | 'barang' | 'pelanggan' | 'kasir' | 'riwayat' | 'laporan' | 
 export default function App() {
   const [currentView, setCurrentView] = useState<View>('menu')
   const [todayStats, setTodayStats] = useState({ sales: 0, profit: 0 });
+  const [initError, setInitError] = useState<string | null>(null);
 
   // Mekanisme PWA Update Prompt
   const {
@@ -46,41 +47,46 @@ export default function App() {
   const [editingTransactionForKasir, setEditingTransactionForKasir] = useState<EnrichedTransaction | null>(null);
 
   const fetchTodayData = useCallback(async () => {
-    const today = new Date();
-    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0);
-    const end = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+    try {
+      const today = new Date();
+      const start = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0);
+      const end = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
 
-    const [trans, exp, products] = await Promise.all([
-      db.transactions.where('tanggal').between(start, end, true, true).toArray(),
-      db.expenses.where('tanggal').between(start, end, true, true).toArray(),
-      db.products.toArray()
-    ]);
+      const [trans, exp, products] = await Promise.all([
+        db.transactions.where('tanggal').between(start, end, true, true).toArray(),
+        db.expenses.where('tanggal').between(start, end, true, true).toArray(),
+        db.products.toArray()
+      ]);
 
-    let sales = 0;
-    let returns = 0;
-    let cogs = 0;
-    
-    trans.forEach(t => {
-      t.items.forEach(item => {
-        const product = products.find(p => p.id === item.productId);
-        const isi = product?.isiPerSatuan || 1;
-        const costPerUnit = item.unit === 'satuan' ? item.hargaBeli : item.hargaBeli / isi;
-        const itemCost = costPerUnit * item.qty;
+      let sales = 0;
+      let returns = 0;
+      let cogs = 0;
+      
+      trans.forEach(t => {
+        t.items.forEach(item => {
+          const product = products.find(p => p.id === item.productId);
+          const isi = product?.isiPerSatuan || 1;
+          const costPerUnit = item.unit === 'satuan' ? item.hargaBeli : item.hargaBeli / isi;
+          const itemCost = costPerUnit * item.qty;
 
-        if (item.subtotal >= 0) {
-          sales += item.subtotal;
-          cogs += itemCost;
-        } else {
-          returns += Math.abs(item.subtotal);
-          cogs -= itemCost;
-        }
+          if (item.subtotal >= 0) {
+            sales += item.subtotal;
+            cogs += itemCost;
+          } else {
+            returns += Math.abs(item.subtotal);
+            cogs -= itemCost;
+          }
+        });
       });
-    });
 
-    const expensesTotal = exp.reduce((acc, e) => acc + e.nominal, 0);
-    const profit = (sales - returns - cogs) - expensesTotal;
+      const expensesTotal = exp.reduce((acc, e) => acc + e.nominal, 0);
+      const profit = (sales - returns - cogs) - expensesTotal;
 
-    setTodayStats({ sales, profit });
+      setTodayStats({ sales, profit });
+    } catch (err) {
+      console.error("Initialization Error:", err);
+      setInitError("Gagal memuat data. Struktur database mungkin berubah.");
+    }
   }, []);
 
   useEffect(() => {
@@ -101,6 +107,22 @@ export default function App() {
     { id: 'laporan', label: 'Laporan', icon: <BarChart3 size={20} />, color: 'bg-purple-100 text-purple-700' },
     { id: 'transfer-stok', label: 'Transfer Stok', icon: <ArrowLeftRight size={20} />, color: 'bg-teal-100 text-teal-700' },
   ]
+
+  if (initError) {
+    return (
+      <div className="min-h-screen bg-stone-50 flex flex-col items-center justify-center p-6 text-center">
+        <AlertCircle size={48} className="text-rose-500 mb-4" />
+        <h1 className="text-lg font-bold text-stone-800 mb-2">Terjadi Kesalahan System</h1>
+        <p className="text-sm text-stone-500 mb-6">{initError}</p>
+        <button 
+          onClick={() => { localStorage.clear(); window.location.reload(); }}
+          className="px-6 py-3 bg-stone-800 text-white rounded-2xl font-bold text-sm"
+        >
+          Reset Aplikasi & Data Cache
+        </button>
+      </div>
+    )
+  }
 
   if (currentView !== 'menu') {
     return (

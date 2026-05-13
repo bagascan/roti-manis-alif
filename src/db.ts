@@ -80,7 +80,7 @@ export class AlifDatabase extends Dexie {
 
   constructor() {
     super('AlifBakeryDB');
-    this.version(16).stores({
+    this.version(17).stores({
       products: '++id, nama, kategori, supplierId, status',
       customers: '++id, nama, telepon, status, hutang',
       suppliers: '++id, nama, telepon, status',
