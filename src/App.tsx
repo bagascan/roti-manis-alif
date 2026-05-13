@@ -1,5 +1,5 @@
 /// <reference types="vite-plugin-pwa/react" />
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback} from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import { db } from './db'
 import type { EnrichedTransaction } from './views/HistoryPage' // Import type for editing transaction
@@ -30,6 +30,7 @@ import {
   Settings,
   Wallet,
   AlertCircle,
+  RefreshCw
 } from 'lucide-react'
 import { formatRupiah } from './utils/formatters'
 
@@ -42,9 +43,37 @@ export default function App() {
 
   // Mekanisme PWA Update Prompt
   const {
-    needRefresh: [needRefresh]
-  } = useRegisterSW();
+    needRefresh: [needRefresh],
+    updateServiceWorker
+  } = useRegisterSW({
+    onRegistered(r) {
+      // Cek update setiap 1 jam
+      if (r) {
+        setInterval(() => {
+          r.update();
+        }, 60 * 60 * 1000);
+      }
+    },
+  });
+
   const [editingTransactionForKasir, setEditingTransactionForKasir] = useState<EnrichedTransaction | null>(null);
+
+  // Handle Navigation (Back Button HP & Browser)
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      const view = event.state?.view || 'menu';
+      setCurrentView(view);
+      if (view !== 'kasir') setEditingTransactionForKasir(null);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigateTo = (view: View) => {
+    window.history.pushState({ view }, '');
+    setCurrentView(view);
+  };
 
   const fetchTodayData = useCallback(async () => {
     try {
@@ -129,12 +158,18 @@ export default function App() {
       <div className="min-h-screen bg-stone-50 flex flex-col">
         <header className="p-4 bg-white border-b flex items-center gap-4">
           <button 
-            onClick={() => window.history.back()}
+            onClick={() => {
+              if (window.history.length > 1) {
+                window.history.back();
+              } else {
+                navigateTo('menu');
+              }
+            }}
             className="p-2 hover:bg-stone-100 rounded-full transition-colors"
           >
             <ChevronLeft size={20} />
           </button>
-          <h1 className="text-base font-bold capitalize">{currentView}</h1>
+          <h1 className="text-base font-bold capitalize">{currentView.replace('-', ' ')}</h1>
         </header>
         {currentView === 'barang' ? <ProductPage /> :
          currentView === 'supplier' ? <SupplierPage /> :
@@ -144,7 +179,7 @@ export default function App() {
            <HistoryPage 
              onEditTransaction={(transaction) => {
                setEditingTransactionForKasir(transaction);
-               setCurrentView('kasir');
+               navigateTo('kasir');
              }}
            />
          ) :
@@ -158,19 +193,25 @@ export default function App() {
              <KasirPage 
                editData={editingTransactionForKasir} 
                onFinished={() => {
-                 const wasEditing = editingTransactionForKasir !== null;
                  setEditingTransactionForKasir(null);
-                 // Hanya pindah ke riwayat jika sebelumnya memang sedang mengedit transaksi lama
-                 if (wasEditing) setCurrentView('riwayat');
+                 window.history.back();
                }} 
              />
            ) : null}
 
         {/* PWA Update Notification */}
         {needRefresh && (
-          <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[200] bg-stone-900 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in zoom-in border border-amber-500/20">
-            <AlertCircle size={20} className="text-amber-500" />
-            <span className="text-sm font-bold">Memperbarui versi aplikasi...</span>
+          <div 
+            onClick={() => updateServiceWorker(true)}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] bg-stone-900 text-white px-5 py-4 rounded-2xl shadow-2xl flex items-center gap-4 animate-in slide-in-from-bottom border border-amber-500 cursor-pointer active:scale-95 transition-transform"
+          >
+            <div className="bg-amber-500 p-2 rounded-xl text-stone-900">
+              <RefreshCw size={20} className="animate-spin" />
+            </div>
+            <div className="text-left">
+              <p className="text-sm font-bold leading-none mb-1">Versi Baru Tersedia!</p>
+              <p className="text-[10px] text-stone-400 font-medium">Klik di sini untuk update aplikasi</p>
+            </div>
           </div>
         )}
       </div>
@@ -187,7 +228,7 @@ export default function App() {
             <p className="text-orange-100 text-xs font-medium tracking-widest uppercase">Selamat Datang</p>
             <h1 className="text-2xl font-extrabold mt-0.5 uppercase">ROTI MANIS ALIF</h1>
             <div className="mt-2 text-[11px] text-orange-50 font-medium leading-tight">
-              <p className="opacity-80 mb-0.5">Laporan Hari Ini</p>
+              <p className="mb-0.5">Laporan Hari Ini</p>
               <p>Total Penjualan : Rp {formatRupiah(todayStats.sales)}</p>
               <p>Total Laba Bersih : Rp {formatRupiah(todayStats.profit)}</p>
             </div>
@@ -201,7 +242,7 @@ export default function App() {
           {menuItems.map((item) => (
             <button
               key={item.id}
-              onClick={() => setCurrentView(item.id as View)}
+              onClick={() => navigateTo(item.id as View)}
               className="flex flex-col items-center justify-center p-3 bg-white rounded-2xl shadow-sm border border-stone-100 active:scale-95 transition-transform"
             >
               <div className={`p-2.5 rounded-xl mb-1.5 ${item.color}`}>
