@@ -19,6 +19,7 @@ interface Transaction {
   tipe: string;
   items: ReceiptItem[];
   total: number;
+  bayar: number;
 }
 
 export const receiptHelper = {
@@ -46,6 +47,16 @@ export const receiptHelper = {
 
     const res: string[] = [];
     res.push(receiptHelper.center(storeName));
+    
+    const address = localStorage.getItem('store_address');
+    if (address) {
+      res.push(receiptHelper.center(address.substring(0, MAX_CHAR)));
+    }
+    const phone = localStorage.getItem('store_phone');
+    if (phone) {
+      res.push(receiptHelper.center(phone));
+    }
+
     res.push(receiptHelper.divider);
     res.push(receiptHelper.justify("Tgl:", date));
     res.push(receiptHelper.justify("Plg:", transaction.customerName || "Umum"));
@@ -76,6 +87,13 @@ export const receiptHelper = {
 
     res.push(receiptHelper.divider);
     res.push(receiptHelper.justify("TOTAL:", `Rp ${formatRupiah(transaction.total)}`));
+    res.push(receiptHelper.justify("BAYAR:", `Rp ${formatRupiah(transaction.bayar)}`));
+    
+    if (transaction.bayar > transaction.total) {
+      const kembalian = transaction.bayar - transaction.total;
+      res.push(receiptHelper.justify("KEMBALI:", `Rp ${formatRupiah(kembalian)}`));
+    }
+
     res.push("");
     res.push(receiptHelper.center("Terima Kasih Atas"));
     res.push(receiptHelper.center("Kunjungan Anda"));

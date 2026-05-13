@@ -1,8 +1,8 @@
 /// <reference types="vite-plugin-pwa/react" />
 import { useState, useEffect, useCallback } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
-import type { EnrichedTransaction } from './views/HistoryPage' // Import type for editing transaction
 import { db } from './db'
+import type { EnrichedTransaction } from './views/HistoryPage' // Import type for editing transaction
 import ProductPage from './views/ProductPage'
 import SupplierPage from './views/SupplierPage'
 import PenyesuaianPage from './views/PenyesuaianPage'
@@ -31,96 +31,66 @@ import {
   Wallet,
   AlertCircle,
 } from 'lucide-react'
-import { formatRupiah } from './utils/formatters';
+import { formatRupiah } from './utils/formatters'
 
 type View = 'menu' | 'barang' | 'pelanggan' | 'kasir' | 'riwayat' | 'laporan' | 'restok' | 'penyesuaian' | 'supplier' | 'pengaturan' | 'pengeluaran' | 'laporan-retur' | 'transfer-stok'
 
 export default function App() {
   const [currentView, setCurrentView] = useState<View>('menu')
+  const [todayStats, setTodayStats] = useState({ sales: 0, profit: 0 });
 
   // Mekanisme PWA Update Prompt
   const {
     needRefresh: [needRefresh]
   } = useRegisterSW();
-
-  const [totalSalesToday, setTotalSalesToday] = useState(0);
-  const [itemsSoldToday, setItemsSoldToday] = useState(0);
-  const [totalReturnsToday, setTotalReturnsToday] = useState(0);
-  const [itemsReturnedToday, setItemsReturnedToday] = useState(0);
-  const [totalExpensesToday, setTotalExpensesToday] = useState(0);
-  const [netProfitToday, setNetProfitToday] = useState(0);
   const [editingTransactionForKasir, setEditingTransactionForKasir] = useState<EnrichedTransaction | null>(null);
 
-  // This useEffect was for totalExpenses, but now we need a more comprehensive summary for today
-  // I'll replace it with fetchTodaySummary
-  // useEffect(() => {
-  //   const fetchTotalExpenses = async () => {
-  //     const expenses = await db.expenses.toArray();
-  //     const total = expenses.reduce((sum, exp) => sum + exp.nominal, 0);
-  //     setTotalExpenses(total);
-  //   };
-  //   fetchTotalExpenses();
-  // }, [currentView]); // Recalculate if we return to menu
-
-  const fetchTodaySummary = useCallback(async () => {
+  const fetchTodayData = useCallback(async () => {
     const today = new Date();
-    const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0);
-    const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
+    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0);
+    const end = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
 
-    const [transactionsToday, expensesToday, productsData] = await Promise.all([
-      db.transactions.where('tanggal').between(startOfDay, endOfDay, true, true).toArray(),
-      db.expenses.where('tanggal').between(startOfDay, endOfDay, true, true).toArray(),
-      db.products.toArray() // Need products to calculate total pcs
+    const [trans, exp, products] = await Promise.all([
+      db.transactions.where('tanggal').between(start, end, true, true).toArray(),
+      db.expenses.where('tanggal').between(start, end, true, true).toArray(),
+      db.products.toArray()
     ]);
 
-    let salesTotal = 0;
-    let salesQty = 0;
-    let returnsTotal = 0;
-    let returnsQty = 0;
-    let cogsTotal = 0; // Cost of Goods Sold (Modal)
-
-    transactionsToday.forEach(t => {
+    let sales = 0;
+    let returns = 0;
+    let cogs = 0;
+    
+    trans.forEach(t => {
       t.items.forEach(item => {
-        const product = productsData.find(p => p.id === item.productId);
+        const product = products.find(p => p.id === item.productId);
         const isi = product?.isiPerSatuan || 1;
-        const qtyInPcs = item.unit === 'satuan' ? item.qty * isi : item.qty;
-
-        // Hitung modal barang (hargaBeli di transaksi adalah harga per Pack)
-        const costPerUnitSold = item.unit === 'satuan' ? item.hargaBeli : item.hargaBeli / isi;
-        const totalItemCost = costPerUnitSold * item.qty;
+        const costPerUnit = item.unit === 'satuan' ? item.hargaBeli : item.hargaBeli / isi;
+        const itemCost = costPerUnit * item.qty;
 
         if (item.subtotal >= 0) {
-          salesTotal += item.subtotal;
-          salesQty += qtyInPcs;
-          cogsTotal += totalItemCost;
+          sales += item.subtotal;
+          cogs += itemCost;
         } else {
-          returnsTotal += Math.abs(item.subtotal);
-          returnsQty += qtyInPcs;
-          cogsTotal -= totalItemCost; // Modal berkurang karena barang kembali ke stok
+          returns += Math.abs(item.subtotal);
+          cogs -= itemCost;
         }
       });
     });
 
-    const expensesTotal = expensesToday.reduce((sum, exp) => sum + exp.nominal, 0);
+    const expensesTotal = exp.reduce((acc, e) => acc + e.nominal, 0);
+    const profit = (sales - returns - cogs) - expensesTotal;
 
-    setTotalSalesToday(salesTotal);
-    setItemsSoldToday(salesQty);
-    setTotalReturnsToday(returnsTotal);
-    setItemsReturnedToday(returnsQty);
-    setTotalExpensesToday(expensesTotal);
-    setNetProfitToday((salesTotal - returnsTotal - cogsTotal) - expensesTotal);
-  }, []); // No dependencies needed here as it always calculates for 'today'
+    setTodayStats({ sales, profit });
+  }, []);
 
   useEffect(() => {
-    if (currentView === 'menu') { // Only fetch when on the main menu
-      fetchTodaySummary();
-    }
-  }, [currentView, fetchTodaySummary]); // Recalculate if we return to menu or fetchTodaySummary changes
+    if (currentView === 'menu') fetchTodayData();
+  }, [currentView, fetchTodayData]);
 
   const menuItems = [
+    { id: 'kasir', label: 'Kasir', icon: <ShoppingCart size={20} />, color: 'bg-green-100 text-green-700' },
     { id: 'barang', label: 'Barang', icon: <Package size={20} />, color: 'bg-amber-100 text-amber-700' },
     { id: 'pelanggan', label: 'Pelanggan', icon: <Users size={20} />, color: 'bg-orange-100 text-orange-700' },
-    { id: 'kasir', label: 'Kasir', icon: <ShoppingCart size={20} />, color: 'bg-green-100 text-green-700' },
     { id: 'supplier', label: 'Supplier', icon: <Truck size={20} />, color: 'bg-indigo-100 text-indigo-700' },
     { id: 'riwayat', label: 'Riwayat', icon: <History size={20} />, color: 'bg-blue-100 text-blue-700' },
     { id: 'restok', label: 'Restok', icon: <PackagePlus size={20} />, color: 'bg-rose-100 text-rose-700' },
@@ -137,7 +107,7 @@ export default function App() {
       <div className="min-h-screen bg-stone-50 flex flex-col">
         <header className="p-4 bg-white border-b flex items-center gap-4">
           <button 
-            onClick={() => setCurrentView('menu')}
+            onClick={() => window.history.back()}
             className="p-2 hover:bg-stone-100 rounded-full transition-colors"
           >
             <ChevronLeft size={20} />
@@ -194,6 +164,11 @@ export default function App() {
           <div>
             <p className="text-orange-100 text-xs font-medium tracking-widest uppercase">Selamat Datang</p>
             <h1 className="text-2xl font-extrabold mt-0.5 uppercase">ROTI MANIS ALIF</h1>
+            <div className="mt-2 text-[11px] text-orange-50 font-medium leading-tight">
+              <p className="opacity-80 mb-0.5">Laporan Hari Ini</p>
+              <p>Total Penjualan : Rp {formatRupiah(todayStats.sales)}</p>
+              <p>Total Laba Bersih : Rp {formatRupiah(todayStats.profit)}</p>
+            </div>
           </div>
         </div>
       </header>
@@ -214,35 +189,6 @@ export default function App() {
             </button>
           ))}
         </div>
-
-        {/* Quick Stats / Summary Card */}
-        <section className="mt-4 p-4 bg-stone-800 text-stone-100 rounded-2xl shadow-lg space-y-2">
-          <h3 className="font-bold text-sm mb-1">Ringkasan Hari Ini</h3>
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-stone-400">Total Penjualan</span>
-            <span className="font-semibold">Rp {formatRupiah(totalSalesToday)}</span>
-          </div>
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-stone-400">Barang Terjual</span>
-            <span>{itemsSoldToday} pcs</span>
-          </div>
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-stone-400">Total Returan</span>
-            <span className="font-semibold">Rp {formatRupiah(totalReturnsToday)}</span>
-          </div>
-          <div className="flex justify-between items-center text-sm border-b border-stone-700 pb-2">
-            <span className="text-stone-400">Barang Diretur</span>
-            <span>{itemsReturnedToday} pcs</span>
-          </div>
-          <div className="flex justify-between items-center text-sm">
-            <span className="text-stone-400">Total Pengeluaran</span>
-            <span className="font-semibold">Rp {formatRupiah(totalExpensesToday)}</span>
-          </div>
-          <div className="flex justify-between items-center pt-2">
-             <span className="text-stone-300 text-base">Laba Bersih</span>
-            <span className="font-extrabold text-xl text-green-400">Rp {formatRupiah(netProfitToday)}</span>
-          </div>
-        </section>
       </main>
 
       <footer className="mt-6 pb-4 text-center text-stone-400 text-xs">

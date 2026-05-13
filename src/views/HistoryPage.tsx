@@ -458,49 +458,78 @@ export const ReceiptModal = ({ transaction, onClose, onPrint }: { transaction: E
         </div>
         <div ref={receiptRef} className="flex-1 overflow-y-auto p-6 space-y-2 text-sm font-mono bg-white">
           <div className="flex flex-col items-center mb-4">
-            <img src={localStorage.getItem('app_logo') || '/logo.jpeg'} alt="Logo" className="w-20 h-20 object-contain mb-2" />
-            <p className="text-center font-bold text-base uppercase">ROTI MANIS ALIF</p>
+            <img 
+              src={localStorage.getItem('app_logo') || '/logo.jpeg'} 
+              alt="Logo" 
+              className="w-24 h-24 object-contain mb-2" 
+              onError={(e) => { (e.target as HTMLImageElement).src = '/logo.jpeg'; }}
+            />
+            <p className="text-center font-bold text-lg uppercase">ROTI MANIS ALIF</p>
+            <p className="text-center text-[10px] leading-tight text-stone-600 max-w-[200px]">{localStorage.getItem('store_address') || ''}</p>
+            <p className="text-center text-[10px] text-stone-600">{localStorage.getItem('store_phone') || ''}</p>
           </div>
           <p>---------------------------------</p>
-          <p>Tanggal: {new Date(transaction.tanggal).toLocaleString('id-ID')}</p>
-          <p>Pelanggan: {transaction.customerName || 'Umum'}</p>
+          <div className="text-[10px] space-y-0.5">
+            <p>Tanggal: {new Date(transaction.tanggal).toLocaleString('id-ID')}</p>
+            <p>Pelanggan: {transaction.customerName || 'Umum'}</p>
+          </div>
           <p>---------------------------------</p>
           {transaction.items.some(i => i.subtotal >= 0) && (
-            <>
-              <p className="font-bold underline mb-1">PENJUALAN</p>
+            <div className="space-y-2">
+              <p className="font-bold mb-1">PENJUALAN</p>
               {transaction.items.filter(i => i.subtotal >= 0).map((item, idx) => {
                 const itemSubtotal = formatRupiah(Math.abs(item.subtotal));
                 return (
-                  <p key={`sale-${idx}`}>
-                    {item.productName} <br />
-                    &nbsp;&nbsp;{item.qty} {item.unit === 'satuan' ? 'Pack' : 'Pcs'} x Rp {formatRupiah(item.harga)} = Rp {itemSubtotal}
-                  </p>
+                  <div key={`sale-${idx}`} className="flex justify-between items-start gap-2">
+                    <div className="flex-1">
+                      <p>{item.productName}</p>
+                      <p className="text-[10px] text-stone-500">{item.qty} {item.unit === 'satuan' ? 'Pack' : 'Pcs'} x {formatRupiah(item.harga)}</p>
+                    </div>
+                    <p className="text-right font-bold">Rp {itemSubtotal}</p>
+                  </div>
                 );
               })}
-            </>
+            </div>
           )}
           {transaction.items.some(i => i.subtotal < 0) && (
-            <>
+            <div className="space-y-2">
               <p>---------------------------------</p>
-              <p className="font-bold underline mb-1">RETUR</p>
+              <p className="font-bold mb-1">RETUR</p>
               {transaction.items.filter(i => i.subtotal < 0).map((item, idx) => {
                 const itemSubtotal = formatRupiah(Math.abs(item.subtotal));
                 return (
-                  <p key={`retur-${idx}`}>
-                    {item.productName} <br />
-                    &nbsp;&nbsp;{item.qty} {item.unit === 'satuan' ? 'Pack' : 'Pcs'} x Rp {formatRupiah(item.harga)} = -Rp {itemSubtotal}
-                  </p>
+                  <div key={`retur-${idx}`} className="flex justify-between items-start gap-2">
+                    <div className="flex-1 text-rose-600">
+                      <p>{item.productName}</p>
+                      <p className="text-[10px]">{item.qty} {item.unit === 'satuan' ? 'Pack' : 'Pcs'} x {formatRupiah(item.harga)}</p>
+                    </div>
+                    <p className="text-right font-bold text-rose-600">-Rp {itemSubtotal}</p>
+                  </div>
                 );
               })}
-            </>
+            </div>
           )}
           <p>---------------------------------</p>
-          <p className="font-bold">TOTAL: Rp {formatRupiah(transaction.total)}</p>
-          <p>Telah Dibayar: Rp {formatRupiah(transaction.bayar || 0)}</p>
+          <div className="flex justify-between font-bold">
+            <span>TOTAL:</span>
+            <span>Rp {formatRupiah(transaction.total)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>BAYAR:</span>
+            <span>Rp {formatRupiah(transaction.bayar || 0)}</span>
+          </div>
           {transaction.status === 'belum_lunas' && (
-            <p className="text-rose-600 font-bold">Sisa Kurang: Rp {formatRupiah(transaction.total - (transaction.bayar || 0))}</p>
+            <div className="flex justify-between text-rose-600 font-bold">
+              <span>SISA:</span>
+              <span>Rp {formatRupiah(transaction.total - (transaction.bayar || 0))}</span>
+            </div>
           )}
-          <p>Status: <span className={transaction.status === 'lunas' ? 'text-green-600 font-bold' : 'text-rose-600 font-bold'}>{transaction.status === 'lunas' ? 'LUNAS' : 'BELUM LUNAS'}</span></p>
+          {transaction.bayar > transaction.total && (
+            <div className="flex justify-between">
+              <span>KEMBALI:</span>
+              <span>Rp {formatRupiah(transaction.bayar - transaction.total)}</span>
+            </div>
+          )}
           <p className="text-center mt-4">Terima Kasih!</p>
         </div>
         <div className="p-4 bg-stone-50 border-t flex flex-col gap-2 rounded-b-2xl">

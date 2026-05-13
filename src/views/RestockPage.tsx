@@ -45,6 +45,7 @@ export default function RestockPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [showCartModal, setShowCartModal] = useState(false);
   const [detailRestock, setDetailRestock] = useState<EnrichedRestock | null>(null);
+  const [qtyModal, setQtyModal] = useState<{ product: Product; qty: number } | null>(null);
 
   // UI State
   const [productSearch, setProductSearch] = useState('');
@@ -99,6 +100,23 @@ export default function RestockPage() {
       setCart([...cart, { ...product, cartQty: 1, cartUnit: 'satuan', cartHargaBeli: product.hargaBeli, cartHargaJual: product.hargaJual }]);
     }
     showToast(`${product.nama} ditambah`, 'success');
+  };
+
+  const handleQtyModalSubmit = () => {
+    if (!qtyModal) return;
+    const { product, qty } = qtyModal;
+    const existing = cart.find(item => item.id === product.id);
+    
+    if (qty <= 0) {
+      if (existing) removeFromCart(product.id!);
+    } else {
+      if (existing) {
+        updateCartItem(product.id!, { cartQty: qty });
+      } else {
+        setCart([...cart, { ...product, cartQty: qty, cartUnit: 'satuan', cartHargaBeli: product.hargaBeli, cartHargaJual: product.hargaJual }]);
+      }
+    }
+    setQtyModal(null);
   };
 
   const updateCartItem = (id: number, updates: Partial<CartItem>) => {
@@ -303,25 +321,38 @@ export default function RestockPage() {
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto p-4">
         {view === 'pos' ? (
-          <div className="grid grid-cols-2 gap-3 pb-20">
+          <div className="flex flex-col gap-3 pb-20">
             {products
               .filter(p => p.nama.toLowerCase().includes(productSearch.toLowerCase()))
-              .map(p => (
-                <button 
-                  key={p.id}
-                  onClick={() => addToCart(p)}
-                  className="bg-white p-3 rounded-xl border border-stone-100 shadow-sm text-left active:scale-95 transition-transform"
-                >
-                  <div className="flex justify-between items-start mb-1.5">
-                    <span className="text-[10px] font-bold text-stone-400 uppercase leading-none">S: {p.stokToko}</span>
-                    <div className="p-0.5 bg-rose-50 text-rose-600 rounded">
-                      <Plus size={12} />
+              .map(p => {
+                const cartItem = cart.find(item => item.id === p.id);
+                const cartQty = cartItem?.cartQty || 0;
+
+                return (
+                  <div key={p.id} className="bg-white p-3 rounded-xl border border-stone-100 shadow-sm flex items-center gap-3">
+                    <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setQtyModal({ product: p, qty: cartQty })}>
+                      <h4 className="text-sm font-bold text-stone-800 line-clamp-1">{p.nama}</h4>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-[10px] font-bold text-stone-400 uppercase leading-none">S: {p.stokToko}</span>
+                        <p className="text-xs font-extrabold text-rose-600">Rp {formatRupiah(p.hargaBeli)}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 bg-stone-50 p-1 rounded-lg border border-stone-100">
+                      <button 
+                        onClick={() => cartQty > 1 ? updateCartItem(p.id!, { cartQty: cartQty - 1 }) : cartQty === 1 ? removeFromCart(p.id!) : null}
+                        disabled={cartQty === 0}
+                        className={`p-1.5 rounded-md transition-colors ${cartQty > 0 ? 'text-rose-500 hover:bg-rose-50' : 'text-stone-300'}`}
+                      >
+                        <Minus size={14} />
+                      </button>
+                      <span className={`text-sm font-bold w-6 text-center ${cartQty > 0 ? 'text-stone-800' : 'text-stone-300'}`}>{cartQty}</span>
+                      <button onClick={() => addToCart(p)} className="p-1.5 bg-rose-50 text-rose-600 rounded-md hover:bg-rose-100">
+                        <Plus size={14} />
+                      </button>
                     </div>
                   </div>
-                  <h4 className="text-sm font-bold text-stone-800 line-clamp-2 leading-tight h-10">{p.nama}</h4>
-                  <p className="mt-1 text-xs font-extrabold text-rose-600">Rp {formatRupiah(p.hargaBeli)}</p>
-                </button>
-              ))
+                );
+              })
             }
           </div>
         ) : (
@@ -494,6 +525,39 @@ export default function RestockPage() {
               >
                 <CheckCircle2 size={18} />
                 Simpan Restok
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Input Qty Manual */}
+      {qtyModal && (
+        <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-xs rounded-3xl p-6 shadow-2xl animate-in zoom-in-95">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-stone-800">Set Quantity Restok</h3>
+              <button onClick={() => setQtyModal(null)} className="p-1.5 bg-stone-100 rounded-full text-stone-400"><X size={16} /></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <p className="text-[10px] text-stone-400 font-bold uppercase mb-1">Produk</p>
+                <p className="text-sm font-bold text-stone-800">{qtyModal.product.nama}</p>
+              </div>
+              <div>
+                <label className="text-[10px] text-stone-400 font-bold uppercase mb-1 block">Jumlah Restok</label>
+                <input 
+                  type="text" inputMode="numeric" autoFocus
+                  value={qtyModal.qty === 0 ? '' : formatRupiah(qtyModal.qty)}
+                  onChange={(e) => setQtyModal({ ...qtyModal, qty: parseRupiah(e.target.value) })}
+                  className="w-full p-4 bg-stone-100 rounded-2xl text-xl font-bold text-stone-800 outline-none focus:ring-2 ring-rose-400"
+                />
+              </div>
+              <button 
+                onClick={handleQtyModalSubmit}
+                className="w-full py-4 bg-rose-600 text-white rounded-2xl font-bold text-sm shadow-lg active:scale-95 transition-transform"
+              >
+                Simpan Ke Keranjang
               </button>
             </div>
           </div>

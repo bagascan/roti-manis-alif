@@ -43,6 +43,7 @@ export default function KasirPage({ editData, onFinished }: KasirProps) {
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [receiptData, setReceiptData] = useState<EnrichedTransaction | null>(null);
   const [jumlahBayar, setJumlahBayar] = useState<number>(0);
+  const [qtyModal, setQtyModal] = useState<{ product: Product; qty: number } | null>(null);
   
   // UI State
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -114,6 +115,23 @@ export default function KasirPage({ editData, onFinished }: KasirProps) {
       setCart([...cart, { ...product, cartQty: 1, cartUnit: 'satuan', cartHargaJual: product.hargaJual, itemMode: mode }]);
     }
     showToast(`${product.nama} masuk keranjang`, 'success');
+  };
+
+  const handleQtyModalSubmit = () => {
+    if (!qtyModal) return;
+    const { product, qty } = qtyModal;
+    const existing = cart.find(item => item.id === product.id && item.itemMode === mode);
+    
+    if (qty <= 0) {
+      if (existing) removeFromCart(product.id!, mode);
+    } else {
+      if (existing) {
+        updateCartItem(product.id!, mode, { cartQty: qty });
+      } else {
+        setCart([...cart, { ...product, cartQty: qty, cartUnit: 'satuan', cartHargaJual: product.hargaJual, itemMode: mode }]);
+      }
+    }
+    setQtyModal(null);
   };
 
   const updateCartItem = (id: number, itemMode: 'penjualan' | 'retur', updates: Partial<CartItem>) => {
@@ -291,34 +309,44 @@ export default function KasirPage({ editData, onFinished }: KasirProps) {
 
       {/* Product Grid */}
       <div className="flex-1 overflow-y-auto p-4">
-        <div className="grid grid-cols-2 gap-3 pb-20">
+        <div className="flex flex-col gap-3 pb-20">
           {products
             .filter(p => p.nama.toLowerCase().includes(productSearch.toLowerCase()))
-            .map(p => (
-              <button 
-                key={p.id}
-                onClick={() => addToCart(p)}
-                className={`bg-white p-2.5 rounded-xl border shadow-sm text-left active:scale-95 transition-transform ${mode === 'retur' ? 'border-blue-400 ring-1 ring-blue-50' : 'border-stone-100'}`}
-              >
-                {mode === 'penjualan' && (
-                  <div className="flex justify-between items-start mb-1.5">
-                    <span className="text-[10px] font-bold text-stone-400 uppercase leading-none">S: {formatRupiah(p.stokToko)}</span>
-                    <div className="p-0.5 bg-green-50 text-green-600 rounded">
-                      <Plus size={12} />
+            .map(p => {
+              const cartItem = cart.find(item => item.id === p.id && item.itemMode === mode);
+              const cartQty = cartItem?.cartQty || 0;
+
+              return (
+                <div 
+                  key={p.id}
+                  className={`bg-white p-3 rounded-xl border shadow-sm flex items-center gap-3 transition-all ${mode === 'retur' ? 'border-blue-200' : 'border-stone-100'}`}
+                >
+                  <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setQtyModal({ product: p, qty: cartQty })}>
+                    <h4 className="text-sm font-bold text-stone-800 line-clamp-1">{p.nama}</h4>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[10px] font-bold text-stone-400 uppercase leading-none">S: {formatRupiah(p.stokToko)}</span>
+                      <p className={`text-xs font-extrabold ${mode === 'retur' ? 'text-blue-600' : 'text-green-600'}`}>Rp {formatRupiah(p.hargaJual)}</p>
                     </div>
                   </div>
-                )}
-                {mode === 'retur' && (
-                  <div className="flex justify-end mb-1.5">
-                    <div className="p-0.5 bg-blue-50 text-blue-600 rounded">
-                      <RotateCcw size={12} />
-                    </div>
+                  <div className="flex items-center gap-2 bg-stone-50 p-1 rounded-lg border border-stone-100">
+                    <button 
+                      onClick={() => cartQty > 1 ? updateCartItem(p.id!, mode, { cartQty: cartQty - 1 }) : cartQty === 1 ? removeFromCart(p.id!, mode) : null}
+                      disabled={cartQty === 0}
+                      className={`p-1.5 rounded-md transition-colors ${cartQty > 0 ? 'text-rose-500 hover:bg-rose-50' : 'text-stone-300'}`}
+                    >
+                      <Minus size={14} />
+                    </button>
+                    <span className={`text-sm font-bold w-6 text-center ${cartQty > 0 ? 'text-stone-800' : 'text-stone-300'}`}>{cartQty}</span>
+                    <button 
+                      onClick={() => addToCart(p)}
+                      className={`p-1.5 rounded-md transition-colors ${mode === 'retur' ? 'text-blue-600 hover:bg-blue-50' : 'text-green-600 hover:bg-green-50'}`}
+                    >
+                      <Plus size={14} />
+                    </button>
                   </div>
-                )}
-                <h4 className="text-sm font-bold text-stone-800 line-clamp-2 leading-tight h-10">{p.nama}</h4>
-                <p className={`mt-1 text-xs font-extrabold ${mode === 'retur' ? 'text-blue-600' : 'text-green-600'}`}>Rp {formatRupiah(p.hargaJual)}</p>
-              </button>
-            ))
+                </div>
+              );
+            })
           }
         </div>
       </div>
@@ -488,6 +516,12 @@ export default function KasirPage({ editData, onFinished }: KasirProps) {
                 <span className="text-stone-500 font-medium">Net Grand Total</span>
                 <span className="text-2xl font-black text-stone-900">Rp {formatRupiah(totalCart)}</span>
               </div>
+              {jumlahBayar > totalCart && (
+                <div className="flex justify-between items-center pb-2">
+                  <span className="text-stone-500 font-medium text-sm">Kembalian</span>
+                  <span className="text-lg font-bold text-blue-600">Rp {formatRupiah(jumlahBayar - totalCart)}</span>
+                </div>
+              )}
               <button 
                 onClick={handleCheckout} // Tombol ini hanya akan muncul jika valid
                 className={`w-full py-3 text-white rounded-xl font-black text-lg shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 ${mode === 'retur' ? 'bg-blue-600 shadow-blue-200' : 'bg-green-600 shadow-green-200'}`}
@@ -507,6 +541,39 @@ export default function KasirPage({ editData, onFinished }: KasirProps) {
                   Keranjang Kosong
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Input Qty Manual */}
+      {qtyModal && (
+        <div className="fixed inset-0 z-[100] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-xs rounded-3xl p-6 shadow-2xl animate-in zoom-in-95">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold text-stone-800">Set Quantity</h3>
+              <button onClick={() => setQtyModal(null)} className="p-1.5 bg-stone-100 rounded-full text-stone-400"><X size={16} /></button>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <p className="text-[10px] text-stone-400 font-bold uppercase mb-1">Produk</p>
+                <p className="text-sm font-bold text-stone-800">{qtyModal.product.nama}</p>
+              </div>
+              <div>
+                <label className="text-[10px] text-stone-400 font-bold uppercase mb-1 block">Jumlah {mode === 'retur' ? 'Retur' : 'Beli'}</label>
+                <input 
+                  type="text" inputMode="numeric" autoFocus
+                  value={qtyModal.qty === 0 ? '' : formatRupiah(qtyModal.qty)}
+                  onChange={(e) => setQtyModal({ ...qtyModal, qty: parseRupiah(e.target.value) })}
+                  className="w-full p-4 bg-stone-100 rounded-2xl text-xl font-bold text-stone-800 outline-none focus:ring-2 ring-amber-400"
+                />
+              </div>
+              <button 
+                onClick={handleQtyModalSubmit}
+                className={`w-full py-4 rounded-2xl font-bold text-sm shadow-lg active:scale-95 transition-transform text-white ${mode === 'retur' ? 'bg-blue-600' : 'bg-stone-800'}`}
+              >
+                Simpan Ke Keranjang
+              </button>
             </div>
           </div>
         </div>

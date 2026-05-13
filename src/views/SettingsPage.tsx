@@ -15,6 +15,8 @@ interface BluetoothDevice {
 export default function SettingsPage() {
   const [printerAddress, setPrinterAddress] = useState(localStorage.getItem('printer_address') || '');
   const [appLogo, setAppLogo] = useState(localStorage.getItem('app_logo') || '/logo.jpeg');
+  const [storeAddress, setStoreAddress] = useState(localStorage.getItem('store_address') || '');
+  const [storePhone, setStorePhone] = useState(localStorage.getItem('store_phone') || '');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isPrinterReady, setIsPrinterReady] = useState(false);
@@ -182,6 +184,26 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
+
+      {/* Identitas Toko Section */}
+      <section className="bg-white p-5 rounded-3xl shadow-sm border border-stone-100">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="p-2 bg-stone-100 text-stone-600 rounded-xl">
+            <Database size={20} />
+          </div>
+          <h2 className="font-bold text-stone-800">Identitas Toko</h2>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-bold text-stone-500 mb-1.5 block">Alamat Toko</label>
+            <input type="text" value={storeAddress} onChange={e => { setStoreAddress(e.target.value); localStorage.setItem('store_address', e.target.value); }} placeholder="Jl. Raya No. 1..." className="w-full p-3 bg-stone-100 rounded-xl text-sm outline-none focus:ring-2 ring-orange-400" />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-stone-500 mb-1.5 block">No. HP / WhatsApp</label>
+            <input type="tel" value={storePhone} onChange={e => { setStorePhone(e.target.value); localStorage.setItem('store_phone', e.target.value); }} placeholder="0812..." className="w-full p-3 bg-stone-100 rounded-xl text-sm outline-none focus:ring-2 ring-orange-400" />
+          </div>
+        </div>
+      </section>
 
       {/* Logo Management Section */}
       <section className="bg-white p-5 rounded-3xl shadow-sm border border-stone-100">
