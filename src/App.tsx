@@ -77,18 +77,26 @@ export default function App() {
     let salesQty = 0;
     let returnsTotal = 0;
     let returnsQty = 0;
+    let cogsTotal = 0; // Cost of Goods Sold (Modal)
 
     transactionsToday.forEach(t => {
       t.items.forEach(item => {
         const product = productsData.find(p => p.id === item.productId);
-        const qtyInPcs = item.unit === 'satuan' ? item.qty * (product?.isiPerSatuan || 1) : item.qty;
+        const isi = product?.isiPerSatuan || 1;
+        const qtyInPcs = item.unit === 'satuan' ? item.qty * isi : item.qty;
 
-        if (t.tipe === 'penjualan') {
+        // Hitung modal barang (hargaBeli di transaksi adalah harga per Pack)
+        const costPerUnitSold = item.unit === 'satuan' ? item.hargaBeli : item.hargaBeli / isi;
+        const totalItemCost = costPerUnitSold * item.qty;
+
+        if (item.subtotal >= 0) {
           salesTotal += item.subtotal;
           salesQty += qtyInPcs;
-        } else if (t.tipe === 'retur') {
-          returnsTotal += Math.abs(item.subtotal); // Returns are negative subtotal, so use abs
+          cogsTotal += totalItemCost;
+        } else {
+          returnsTotal += Math.abs(item.subtotal);
           returnsQty += qtyInPcs;
+          cogsTotal -= totalItemCost; // Modal berkurang karena barang kembali ke stok
         }
       });
     });
@@ -100,7 +108,7 @@ export default function App() {
     setTotalReturnsToday(returnsTotal);
     setItemsReturnedToday(returnsQty);
     setTotalExpensesToday(expensesTotal);
-    setNetProfitToday(salesTotal - returnsTotal - expensesTotal);
+    setNetProfitToday((salesTotal - returnsTotal - cogsTotal) - expensesTotal);
   }, []); // No dependencies needed here as it always calculates for 'today'
 
   useEffect(() => {
@@ -238,7 +246,7 @@ export default function App() {
       </main>
 
       <footer className="mt-6 pb-4 text-center text-stone-400 text-xs">
-        &copy; 2024 Roti Manis Alif • Mobile POS
+        &copy; 2026 Roti Manis Alif • Mobile POS
       </footer>
     </div>
   )

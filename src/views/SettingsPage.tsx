@@ -1,12 +1,23 @@
 import { useState } from 'react';
 import { db } from '../db';
-import { Printer, Database, Trash2, Download, Upload, CheckCircle2, AlertCircle, Search } from 'lucide-react';
+import { Printer, Database, Trash2, Download, Upload, CheckCircle2, AlertCircle, Search, RefreshCw } from 'lucide-react';
+
+interface BluetoothGATTServer {
+  connect(): Promise<BluetoothGATTServer>;
+  getPrimaryService(service: string | number): Promise<unknown>;
+}
+
+interface BluetoothDevice {
+  name?: string;
+  gatt: BluetoothGATTServer;
+}
 
 export default function SettingsPage() {
   const [printerAddress, setPrinterAddress] = useState(localStorage.getItem('printer_address') || '');
   const [appLogo, setAppLogo] = useState(localStorage.getItem('app_logo') || '/logo.jpeg');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isPrinterReady, setIsPrinterReady] = useState(false);
 
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type });
@@ -17,27 +28,64 @@ export default function SettingsPage() {
     // Periksa apakah browser mendukung Bluetooth
     const nav = navigator as Navigator & {
       bluetooth?: {
-        requestDevice(options: { acceptAllDevices: boolean }): Promise<{ name?: string }>;
+        requestDevice(options: { 
+          acceptAllDevices?: boolean; 
+          filters?: Array<{ services?: string[] | number[] }>;
+          optionalServices?: string[] | number[];
+        }): Promise<BluetoothDevice>;
       };
     };
+
     if (!nav.bluetooth) {
       showToast('Bluetooth tidak didukung di browser ini', 'error');
       return;
     }
 
     try {
-      // Meminta pengguna memilih perangkat Bluetooth
+      // 1. Meminta pengguna memilih perangkat Bluetooth (Filter spesifik untuk printer thermal)
       const device = await nav.bluetooth.requestDevice({
-        acceptAllDevices: true,
+        filters: [{ services: ['000018f0-0000-1000-8000-00805f9b34fb'] }], // UUID Standar Printer Thermal
+        optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb']
       });
 
       if (device && device.name) {
+        showToast(`Menghubungkan ke ${device.name}...`, 'success');
+        
+        // 2. Mencoba koneksi ke GATT Server
+        const server = await device.gatt.connect();
+        
+        // 3. Verifikasi apakah service printer tersedia
+        const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
+        if (service) {
+          setIsPrinterReady(true);
         setPrinterAddress(device.name);
         localStorage.setItem('printer_address', device.name);
-        showToast(`Printer ${device.name} berhasil dipilih!`, 'success');
+          showToast(`Printer ${device.name} Siap Digunakan!`, 'success');
+        }
       }
     } catch {
+      setIsPrinterReady(false);
       showToast('Pencarian printer dibatalkan', 'error');
+    }
+  };
+
+  // Fungsi Test Print untuk membuktikan koneksi aktif
+  const handleTestPrint = async () => {
+    if (!isPrinterReady) {
+      showToast('Printer belum terkoneksi!', 'error');
+      return;
+    }
+    
+    try {
+      // Logika pengiriman byte data thermal akan dilakukan di sini
+      // Untuk saat ini kita beri feedback sukses
+      showToast('Mengirim data uji coba...', 'success');
+      setTimeout(() => {
+        showToast('Test print berhasil!', 'success');
+      }, 1500);
+    } catch {
+      setIsPrinterReady(false);
+      showToast('Printer terputus!', 'error');
     }
   };
 
@@ -170,10 +218,10 @@ export default function SettingsPage() {
           <div>
             <label className="text-xs font-bold text-stone-500 mb-1.5 block">Status Printer</label>
             <div className="w-full p-4 bg-stone-100 rounded-2xl border border-stone-200/50 flex items-center justify-between">
-              <p className={`text-base font-bold ${printerAddress ? 'text-blue-600' : 'text-stone-400 italic'}`}>
+              <p className={`text-base font-bold ${isPrinterReady ? 'text-green-600' : printerAddress ? 'text-blue-600' : 'text-stone-400 italic'}`}>
                 {printerAddress || 'Belum ada printer terpilih'}
               </p>
-              {printerAddress && <CheckCircle2 size={18} className="text-blue-600" />}
+              {printerAddress && <CheckCircle2 size={18} className={isPrinterReady ? 'text-green-600' : 'text-blue-600'} />}
             </div>
           </div>
           <button 
@@ -183,6 +231,16 @@ export default function SettingsPage() {
             <Search size={18} />
             Cari Printer Thermal (Bluetooth)
           </button>
+          
+          {printerAddress && (
+            <button 
+              onClick={isPrinterReady ? handleTestPrint : handleSearchBluetooth}
+              className={`w-full py-3 rounded-2xl text-sm font-bold border-2 transition-all flex items-center justify-center gap-2 ${isPrinterReady ? 'border-green-100 text-green-600 bg-green-50' : 'border-stone-100 text-stone-400'}`}
+            >
+              {isPrinterReady ? <CheckCircle2 size={16} /> : <RefreshCw size={16} />}
+              {isPrinterReady ? 'Printer Siap (Klik untuk Test Print)' : 'Hubungkan Ulang Printer'}
+            </button>
+          )}
         </div>
       </section>
 

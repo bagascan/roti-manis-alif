@@ -105,6 +105,19 @@ export default function ProductPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
+  // Helper untuk menampilkan stok dalam format "X Pack Y Pcs"
+  const renderStockDetail = (stock: number, isi: number, unit: string) => {
+    const totalPcs = Math.round(stock * isi);
+    const packs = Math.floor(totalPcs / isi);
+    const pcs = totalPcs % isi;
+
+    if (isi <= 1) return `${stock} ${unit}`;
+    
+    const packDisplay = packs > 0 || pcs === 0 ? `${packs} ${unit}` : '';
+    const pcsDisplay = pcs > 0 ? `${pcs} Pcs` : '';
+    return `${packDisplay} ${pcsDisplay}`.trim();
+  };
+
   const filteredProducts = products.filter(p => 
     p.nama.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -250,11 +263,11 @@ export default function ProductPage() {
               <div className="grid grid-cols-3 gap-2 border-t border-stone-50 pt-2.5">
                 <div className="flex flex-col">
                   <span className="text-[10px] text-stone-400 uppercase font-bold">Stok Toko</span>
-                  <span className="text-xs font-bold text-green-600">{p.stokToko} <span className="text-[10px] font-normal text-stone-400">{p.satuan}</span></span>
+                  <span className="text-xs font-bold text-green-600">{renderStockDetail(p.stokToko, p.isiPerSatuan, p.satuan)}</span>
                 </div>
                 <div className="flex flex-col">
                   <span className="text-[10px] text-stone-400 uppercase font-bold">Stok Retur</span>
-                  <span className="text-xs font-bold text-rose-500">{p.stokRetur} <span className="text-[10px] font-normal text-stone-400">{p.satuan}</span></span>
+                  <span className="text-xs font-bold text-rose-500">{renderStockDetail(p.stokRetur, p.isiPerSatuan, p.satuan)}</span>
                 </div>
                 <div className="flex flex-col text-right">
                   <span className="text-[10px] text-stone-400 uppercase font-bold">Harga Jual</span>

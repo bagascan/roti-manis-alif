@@ -49,13 +49,18 @@ export default function KasirPage({ editData, onFinished }: KasirProps) {
   const searchRef = useRef<HTMLInputElement>(null);
 
   const calculateItemAmount = (item: CartItem) => {
-    const price = item.cartUnit === 'satuan' ? item.cartHargaJual : item.cartHargaJual / item.isiPerSatuan;
-    return item.cartQty * price;
+    return item.cartQty * item.cartHargaJual;
   };
 
   const totalPenjualanAmount = cart.reduce((acc, item) => acc + (item.itemMode === 'penjualan' ? calculateItemAmount(item) : 0), 0);
   const totalReturAmount = cart.reduce((acc, item) => acc + (item.itemMode === 'retur' ? calculateItemAmount(item) : 0), 0);
   const totalCart = totalPenjualanAmount - totalReturAmount; // Net Grand Total
+    // Validasi global untuk memastikan tidak ada harga jual di bawah modal di seluruh keranjang
+  const isCartInvalid = cart.some(item => {
+    const minPrice = item.cartUnit === 'satuan' ? item.hargaBeli : Math.ceil(item.hargaBeli / item.isiPerSatuan);
+    return item.cartHargaJual < minPrice;
+  });
+  const isPaymentInvalid = totalCart > 0 && jumlahBayar <= 0;
   useEffect(() => {
     loadData();
     if (editData) {
@@ -130,7 +135,7 @@ export default function KasirPage({ editData, onFinished }: KasirProps) {
   };
 
   const handleCheckout = async () => {
-    if (cart.length === 0) return;
+    if (cart.length === 0 || isCartInvalid || isPaymentInvalid) return;
     try {
       const status = jumlahBayar >= totalCart ? 'lunas' : 'belum_lunas';
       
@@ -373,7 +378,19 @@ export default function KasirPage({ editData, onFinished }: KasirProps) {
                       {(['satuan', 'pcs'] as const).map(u => (
                         <button 
                           key={u}
-                          onClick={() => updateCartItem(item.id!, item.itemMode, { cartUnit: u })}
+                          onClick={() => {
+                            if (item.cartUnit === u) return;
+                            // Reset ke harga katalog produk saat pindah unit agar tidak membawa 
+                            // kesalahan input atau koreksi modal ke unit yang baru.
+                            const newPrice = u === 'pcs' 
+                              ? Math.round(item.hargaJual / item.isiPerSatuan)
+                              : item.hargaJual;
+
+                            updateCartItem(item.id!, item.itemMode, { 
+                              cartUnit: u, 
+                              cartHargaJual: newPrice
+                            });
+                          }}
                           className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase transition-all ${item.cartUnit === u ? (mode === 'retur' ? 'bg-blue-500 text-white' : 'bg-green-600 text-white') : 'bg-white text-stone-400 border border-stone-100'}`}
                         >
                           {u === 'satuan' ? item.satuan : 'Pcs'}
@@ -412,24 +429,32 @@ export default function KasirPage({ editData, onFinished }: KasirProps) {
                   </div>
 
                   <div className="pt-2 border-t border-stone-100">
-                    <label className={`text-[10px] font-bold block mb-0.5 transition-colors ${item.cartHargaJual < item.hargaBeli ? 'text-rose-500 animate-pulse' : 'text-stone-400'}`}>
-                      Harga Jual {item.cartHargaJual < item.hargaBeli && `(Minimal Rp ${formatRupiah(item.hargaBeli)})`}
-                    </label>
-                    <input 
-                      type="text" 
-                      value={formatRupiah(item.cartHargaJual)} 
-                      onChange={(e) => updateCartItem(item.id!, item.itemMode, { cartHargaJual: parseRupiah(e.target.value) })}
-                      onBlur={() => {
-                        if (item.cartHargaJual < item.hargaBeli) {
-                          showToast(`Harga jual ditingkatkan ke harga modal (Rp ${formatRupiah(item.hargaBeli)})`, 'error');
-                          updateCartItem(item.id!, item.itemMode, { cartHargaJual: item.hargaBeli });
-                        }
-                      }}
-                      className={`w-full bg-white p-1 text-base border rounded-md outline-none focus:ring-1 font-bold text-stone-700 transition-all ${
-                        item.cartHargaJual < item.hargaBeli ? 'border-rose-400 ring-rose-500 bg-rose-50' : 'border-stone-200 ring-amber-400'
-                      }`}
-                      inputMode="numeric"
-                    />
+                    {(() => {
+                      const minPrice = item.cartUnit === 'satuan' ? item.hargaBeli : Math.ceil(item.hargaBeli / item.isiPerSatuan);
+                      const isLowPrice = item.cartHargaJual < minPrice;
+                      return (
+                        <>
+                          <label className={`text-[10px] font-bold block mb-0.5 transition-colors ${isLowPrice ? 'text-rose-500 animate-pulse' : 'text-stone-400'}`}>
+                            Harga Jual {isLowPrice && `(Minimal Modal Rp ${formatRupiah(minPrice)})`}
+                          </label>
+                          <input 
+                            type="text" 
+                            value={formatRupiah(item.cartHargaJual)} 
+                            onChange={(e) => updateCartItem(item.id!, item.itemMode, { cartHargaJual: parseRupiah(e.target.value) })}
+                            onBlur={() => {
+                              if (isLowPrice) {
+                                showToast(`Harga ditingkatkan ke modal Rp ${formatRupiah(minPrice)}`, 'error');
+                                updateCartItem(item.id!, item.itemMode, { cartHargaJual: minPrice });
+                              }
+                            }}
+                            className={`w-full bg-white p-1 text-base border rounded-md outline-none focus:ring-1 font-bold text-stone-700 transition-all ${
+                              isLowPrice ? 'border-rose-400 ring-rose-500 bg-rose-50' : 'border-stone-200 ring-amber-400'
+                            }`}
+                            inputMode="numeric"
+                          />
+                        </>
+                      );
+                    })()}
                   </div>
                 </div>
               ))}
@@ -464,12 +489,24 @@ export default function KasirPage({ editData, onFinished }: KasirProps) {
                 <span className="text-2xl font-black text-stone-900">Rp {formatRupiah(totalCart)}</span>
               </div>
               <button 
-                onClick={handleCheckout}
+                onClick={handleCheckout} // Tombol ini hanya akan muncul jika valid
                 className={`w-full py-3 text-white rounded-xl font-black text-lg shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 ${mode === 'retur' ? 'bg-blue-600 shadow-blue-200' : 'bg-green-600 shadow-green-200'}`}
               >
                 <CheckCircle2 size={18} />
                 Simpan Transaksi
               </button>
+              {(isCartInvalid || isPaymentInvalid) && (
+                <div className="w-full py-3 bg-stone-300 text-stone-600 rounded-xl font-black text-lg shadow-none flex items-center justify-center gap-2 cursor-not-allowed">
+                  <AlertCircle size={18} />
+                  {isCartInvalid ? 'Harga di Bawah Modal' : 'Jumlah Bayar Tidak Valid'}
+                </div>
+              )}
+              {cart.length === 0 && (
+                <div className="w-full py-3 bg-stone-300 text-stone-600 rounded-xl font-black text-lg shadow-none flex items-center justify-center gap-2 cursor-not-allowed">
+                  <ShoppingCart size={18} />
+                  Keranjang Kosong
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { db, Transaction, Expense, Customer } from '../db';
+import { db, Transaction, Expense, Customer, Product } from '../db';
 import { Search, BarChart3, TrendingUp, TrendingDown, Wallet } from 'lucide-react';
 import { formatRupiah, getLocalDateString } from '../utils/formatters';
 
@@ -8,6 +8,7 @@ export default function LaporanPage() {
   const [endDate, setEndDate] = useState(getLocalDateString(new Date()));
   const [searchTerm, setSearchTerm] = useState('');
   const [transactions, setTransactions] = useState<(Transaction & { customerName: string })[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
 
   const loadData = useCallback(async () => { // Wrapped in useCallback
@@ -18,10 +19,11 @@ export default function LaporanPage() {
     const [yearEnd, monthEnd, dayEnd] = endDate.split('-').map(Number);
     const localEnd = new Date(yearEnd, monthEnd - 1, dayEnd, 23, 59, 59, 999);
 
-    const [tData, eData, cData] = await Promise.all([
+    const [tData, eData, cData, pData] = await Promise.all([
       db.transactions.where('tanggal').between(localStart, localEnd, true, true).toArray(), // Use localStart and localEnd
       db.expenses.where('tanggal').between(localStart, localEnd, true, true).toArray() as Promise<Expense[]>,
-      db.customers.toArray() as Promise<Customer[]>
+      db.customers.toArray() as Promise<Customer[]>,
+      db.products.toArray() as Promise<Product[]>
     ]);
     
     const enrichedT: (Transaction & { customerName: string })[] = tData.map(t => ({
@@ -30,6 +32,7 @@ export default function LaporanPage() {
     }));
 
     setTransactions(enrichedT);
+    setProducts(pData);
     setExpenses(eData);
   }, [startDate, endDate]);
 
@@ -49,10 +52,29 @@ export default function LaporanPage() {
     }
   }).sort((a, b) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime());
 
-  const totalSales = transactions.filter(t => t.tipe === 'penjualan').reduce((acc, t) => acc + t.total, 0);
-  const totalReturns = Math.abs(transactions.filter(t => t.tipe === 'retur').reduce((acc, t) => acc + t.total, 0));
+  let grossSales = 0;
+  let grossReturns = 0;
+  let totalCOGS = 0;
+
+  transactions.forEach(t => {
+    t.items.forEach(item => {
+      const product = products.find(p => p.id === item.productId);
+      const isi = product?.isiPerSatuan || 1;
+      const costPerUnitSold = item.unit === 'satuan' ? item.hargaBeli : item.hargaBeli / isi;
+      const itemCost = costPerUnitSold * item.qty;
+
+      if (item.subtotal >= 0) {
+        grossSales += item.subtotal;
+        totalCOGS += itemCost;
+      } else {
+        grossReturns += Math.abs(item.subtotal);
+        totalCOGS -= itemCost;
+      }
+    });
+  });
+
   const totalExpenses = expenses.reduce((acc, e) => acc + e.nominal, 0);
-  const netProfit = totalSales - totalReturns - totalExpenses;
+  const netProfit = (grossSales - grossReturns - totalCOGS) - totalExpenses;
 
   return (
     <main className="flex-1 overflow-y-auto p-4 bg-stone-50 space-y-4">
@@ -75,14 +97,14 @@ export default function LaporanPage() {
             <TrendingUp size={12} className="text-green-500" />
             <p className="text-[9px] text-stone-400 uppercase font-bold">Penjualan Kotor</p>
           </div>
-          <p className="text-sm font-bold text-stone-700">Rp {formatRupiah(totalSales)}</p>
+          <p className="text-sm font-bold text-stone-700">Rp {formatRupiah(grossSales)}</p>
         </div>
         <div className="bg-white p-3 rounded-xl shadow-sm border border-stone-100">
           <div className="flex items-center gap-1.5 mb-1">
             <TrendingDown size={12} className="text-blue-500" />
             <p className="text-[9px] text-stone-400 uppercase font-bold">Total Retur</p>
           </div>
-          <p className="text-sm font-bold text-stone-700">Rp {formatRupiah(totalReturns)}</p>
+          <p className="text-sm font-bold text-stone-700">Rp {formatRupiah(grossReturns)}</p>
         </div>
         <div className="bg-white p-3 rounded-xl shadow-sm border border-stone-100">
           <div className="flex items-center gap-1.5 mb-1">

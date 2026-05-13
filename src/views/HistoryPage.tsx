@@ -256,9 +256,6 @@ export default function HistoryPage({ onEditTransaction }: { onEditTransaction: 
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-1">
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${t.tipe === 'penjualan' ? 'bg-green-100 text-green-700' : 'bg-rose-100 text-rose-700'} uppercase`}>
-                      {t.tipe}
-                    </span>
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${t.status === 'belum_lunas' ? 'bg-rose-500 text-white' : 'bg-blue-100 text-blue-700'} uppercase`}>
                       {t.status === 'belum_lunas' ? 'Belum Lunas' : 'Lunas'}
                     </span>
@@ -293,9 +290,6 @@ export default function HistoryPage({ onEditTransaction }: { onEditTransaction: 
               <div>
                 <div className="flex items-center gap-2 mb-0.5">
                  <h3 className="text-lg font-bold text-stone-800">Detail Transaksi #{detailTransaction.id}</h3>
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${detailTransaction.tipe === 'penjualan' ? 'bg-green-100 text-green-700' : 'bg-rose-100 text-rose-700'} uppercase`}>
-                    {detailTransaction.tipe}
-                  </span>
                 </div>
                  <p className="text-xs text-stone-400">{new Date(detailTransaction.tanggal).toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' })} • {detailTransaction.customerName}</p>
               </div>
