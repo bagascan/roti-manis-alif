@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate', // Ini yang mengaktifkan skipWaiting & clientsClaim secara otomatis
+      registerType: 'prompt', // Berubah menjadi prompt agar muncul notifikasi "Update Tersedia"
       includeAssets: ['logo.jpeg', 'logo-192x192.png', 'logo-512x512.png'],
       manifest: {
         name: 'ROTI MANIS ARIF',

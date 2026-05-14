@@ -308,21 +308,6 @@ export default function App() {
     if (currentView === 'menu') fetchTodayData();
   }, [currentView, fetchTodayData]);
 
-  const menuItems = [
-    { id: 'kasir', label: 'Kasir', icon: <ShoppingCart size={20} />, color: 'bg-green-100 text-green-700' },
-    { id: 'barang', label: 'Barang', icon: <Package size={20} />, color: 'bg-amber-100 text-amber-700' },
-    { id: 'pelanggan', label: 'Pelanggan', icon: <Users size={20} />, color: 'bg-orange-100 text-orange-700' },
-    { id: 'supplier', label: 'Supplier', icon: <Truck size={20} />, color: 'bg-indigo-100 text-indigo-700' },
-    { id: 'riwayat', label: 'Riwayat', icon: <History size={20} />, color: 'bg-blue-100 text-blue-700' },
-    { id: 'restok', label: 'Restok', icon: <PackagePlus size={20} />, color: 'bg-rose-100 text-rose-700' },
-    { id: 'pengeluaran', label: 'Kas Operasional', icon: <Wallet size={20} />, color: 'bg-red-100 text-red-700' },
-    { id: 'penyesuaian', label: 'Stok Opname', icon: <Settings2 size={20} />, color: 'bg-slate-100 text-stone-700' },
-    { id: 'pengaturan', label: 'Pengaturan', icon: <Settings size={20} />, color: 'bg-stone-200 text-stone-700' },
-    { id: 'laporan-retur', label: 'Laporan Retur', icon: <RotateCcw size={20} />, color: 'bg-indigo-100 text-indigo-700' }, // New menu item
-    { id: 'laporan', label: 'Laporan', icon: <BarChart3 size={20} />, color: 'bg-purple-100 text-purple-700' },
-    { id: 'transfer-stok', label: 'Transfer Stok', icon: <ArrowLeftRight size={20} />, color: 'bg-teal-100 text-teal-700' },
-  ]
-
   if (initError) {
     return (
       <div className="min-h-screen bg-stone-50 flex flex-col items-center justify-center p-6 text-center">
@@ -336,131 +321,97 @@ export default function App() {
           Reset Aplikasi & Data Cache
         </button>
       </div>
-    )
+    );
   }
 
-  if (currentView !== 'menu') {
-    return (
-      <div className="min-h-screen bg-stone-50 flex flex-col">
-        <header className="p-4 bg-white border-b flex items-center gap-4">
-          <button 
-            onClick={() => {
-              if (window.history.length > 1) {
-                window.history.back();
-              } else {
-                navigateTo('menu');
-              }
-            }}
-            className="p-2 hover:bg-stone-100 rounded-full transition-colors"
-          >
-            <ChevronLeft size={20} />
-          </button>
-        <h1 className="text-base font-bold capitalize">
-          {currentView === 'pengeluaran' ? 'Kas Operasional' : currentView.replace('-', ' ')}
-        </h1>
-        </header>
-        {currentView === 'barang' ? <ProductPage /> :
-         currentView === 'supplier' ? <SupplierPage /> :
-         currentView === 'pelanggan' ? <CustomerPage /> :
-         currentView === 'restok' ? <RestockPage /> :
-         currentView === 'riwayat' ? (
-           <HistoryPage 
-             isPrinterReady={isPrinterReady}
-             onPrint={printReceipt}
-             onSearchBluetooth={handleSearchBluetooth}
-             onEditTransaction={(transaction) => {
-               setEditingTransactionForKasir(transaction);
-               navigateTo('kasir');
-             }}
-           />
-         ) :
-         currentView === 'penyesuaian' ? <PenyesuaianPage /> :
-         currentView === 'pengeluaran' ? <ExpensePage /> :
-         currentView === 'pengaturan' ? (
-           <SettingsPage 
-              isPrinterReady={isPrinterReady} 
-              printerAddress={printerAddress} 
-              onSearchBluetooth={handleSearchBluetooth}
-              printerCharacteristic={printerCharacteristicRef.current}
-           />
-         ) :
-         currentView === 'laporan-retur' ? <LaporanReturPage /> :
-         currentView === 'laporan' ? <LaporanPage /> : 
-         currentView === 'transfer-stok' ? <TransferStokPage /> : 
-         currentView === 'kasir' ? (
-             <KasirPage 
-               editData={editingTransactionForKasir} 
-               isPrinterReady={isPrinterReady}
-               onSearchBluetooth={handleSearchBluetooth}
-               onPrint={printReceipt}
-               onFinished={() => {
-                 const wasEditing = editingTransactionForKasir !== null;
-                 setEditingTransactionForKasir(null);
-                 // Jika sedang edit transaksi lama, balik ke riwayat. 
-                 // Jika transaksi baru, tetap di Kasir untuk transaksi berikutnya.
-                 if (wasEditing) window.history.back();
-               }} 
-             />
-           ) : null}
-
-        {/* PWA Update Notification */}
-        {needRefresh && (
-          <div 
-            onClick={() => updateServiceWorker(true)}
-            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] bg-stone-900 text-white px-5 py-4 rounded-2xl shadow-2xl flex items-center gap-4 animate-in slide-in-from-bottom border border-amber-500 cursor-pointer active:scale-95 transition-transform"
-          >
-            <div className="bg-amber-500 p-2 rounded-xl text-stone-900">
-              <RefreshCw size={20} className="animate-spin" />
-            </div>
-            <div className="text-left">
-              <p className="text-sm font-bold leading-none mb-1">Versi Baru Tersedia!</p>
-              <p className="text-[10px] text-stone-400 font-medium">Klik di sini untuk update aplikasi</p>
-            </div>
-          </div>
-        )}
-      </div>
-    )
-  }
+  const menuItems = [
+    { id: 'kasir', label: 'Kasir', icon: <ShoppingCart size={20} />, color: 'bg-green-100 text-green-700' },
+    { id: 'barang', label: 'Barang', icon: <Package size={20} />, color: 'bg-amber-100 text-amber-700' },
+    { id: 'pelanggan', label: 'Pelanggan', icon: <Users size={20} />, color: 'bg-orange-100 text-orange-700' },
+    { id: 'supplier', label: 'Supplier', icon: <Truck size={20} />, color: 'bg-indigo-100 text-indigo-700' },
+    { id: 'riwayat', label: 'Riwayat', icon: <History size={20} />, color: 'bg-blue-100 text-blue-700' },
+    { id: 'restok', label: 'Restok', icon: <PackagePlus size={20} />, color: 'bg-rose-100 text-rose-700' },
+    { id: 'pengeluaran', label: 'Kas Operasional', icon: <Wallet size={20} />, color: 'bg-red-100 text-red-700' },
+    { id: 'penyesuaian', label: 'Stok Opname', icon: <Settings2 size={20} />, color: 'bg-slate-100 text-stone-700' },
+    { id: 'pengaturan', label: 'Pengaturan', icon: <Settings size={20} />, color: 'bg-stone-200 text-stone-700' },
+    { id: 'laporan-retur', label: 'Laporan Retur', icon: <RotateCcw size={20} />, color: 'bg-indigo-100 text-indigo-700' },
+    { id: 'laporan', label: 'Laporan', icon: <BarChart3 size={20} />, color: 'bg-purple-100 text-purple-700' },
+    { id: 'transfer-stok', label: 'Transfer Stok', icon: <ArrowLeftRight size={20} />, color: 'bg-teal-100 text-teal-700' },
+  ];
 
   return (
-    <div className="min-h-screen bg-stone-50 text-stone-900 font-sans">
-      {/* Header / Hero Section */}
-      <header className="p-5 pb-10 bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-b-[2rem] shadow-md">
-        <div className="max-w-md mx-auto flex items-center gap-4">
-          <img src={localStorage.getItem('app_logo') || '/logo.jpeg'} alt="Logo" className="w-16 h-16 rounded-2xl object-cover border-2 border-white/50 shadow-lg" />
-          <div>
-            <p className="text-orange-100 text-xs font-medium tracking-widest uppercase">Selamat Datang</p>
-            <h1 className="text-2xl font-extrabold mt-0.5 uppercase">ROTI MANIS ARIF</h1>
-            <div className="mt-2 text-[11px] text-orange-50 font-medium leading-tight">
-              <p className="mb-0.5">Laporan Hari Ini</p>
-              <p>Total Pembelian : Rp {formatRupiah(todayStats.sales)}</p>
-              <p>Total Laba Bersih : Rp {formatRupiah(todayStats.profit)}</p>
+    <div className="min-h-screen bg-stone-50 text-stone-900 font-sans flex flex-col">
+      {currentView === 'menu' ? (
+        <>
+          {/* Render Menu Utama */}
+          <header className="p-5 pb-10 bg-gradient-to-br from-amber-500 to-orange-600 text-white rounded-b-[2rem] shadow-md">
+            <div className="max-w-md mx-auto flex items-center gap-4">
+              <img src={localStorage.getItem('app_logo') || '/logo.jpeg'} alt="Logo" className="w-16 h-16 rounded-2xl object-cover border-2 border-white/50 shadow-lg" />
+              <div>
+                <p className="text-orange-100 text-xs font-medium tracking-widest uppercase">Selamat Datang</p>
+                <h1 className="text-2xl font-extrabold mt-0.5 uppercase">ROTI MANIS ARIF</h1>
+                <div className="mt-2 text-[11px] text-orange-50 font-medium leading-tight">
+                  <p className="mb-0.5">Laporan Hari Ini</p>
+                  <p>Total Pembelian : Rp {formatRupiah(todayStats.sales)}</p>
+                  <p>Total Laba Bersih : Rp {formatRupiah(todayStats.profit)}</p>
+                </div>
+              </div>
             </div>
+          </header>
+          <main className="max-w-md mx-auto -mt-6 p-3">
+            <div className="grid grid-cols-3 gap-2">
+              {menuItems.map((item) => (
+                <button key={item.id} onClick={() => navigateTo(item.id as View)} className="flex flex-col items-center justify-center p-3 bg-white rounded-2xl shadow-sm border border-stone-100 active:scale-95 transition-transform">
+                  <div className={`p-2.5 rounded-xl mb-1.5 ${item.color}`}>{item.icon}</div>
+                  <span className="text-xs font-bold text-stone-700">{item.label}</span>
+                </button>
+              ))}
+            </div>
+          </main>
+          <footer className="mt-6 pb-4 text-center text-stone-400 text-xs">&copy; 2026 Roti Manis Arif • Mobile POS</footer>
+        </>
+      ) : (
+        <>
+          {/* Render Halaman Fitur */}
+          <header className="p-4 bg-white border-b flex items-center gap-4">
+            <button onClick={() => window.history.length > 1 ? window.history.back() : navigateTo('menu')} className="p-2 hover:bg-stone-100 rounded-full transition-colors"><ChevronLeft size={20} /></button>
+            <h1 className="text-base font-bold capitalize">{currentView.replace('-', ' ')}</h1>
+          </header>
+          {currentView === 'barang' && <ProductPage />}
+          {currentView === 'supplier' && <SupplierPage />}
+          {currentView === 'pelanggan' && <CustomerPage />}
+          {currentView === 'restok' && <RestockPage />}
+          {currentView === 'riwayat' && (
+            <HistoryPage 
+              isPrinterReady={isPrinterReady} onPrint={printReceipt} onSearchBluetooth={handleSearchBluetooth} 
+              onEditTransaction={(t) => { setEditingTransactionForKasir(t); navigateTo('kasir'); }} 
+            />
+          )}
+          {currentView === 'penyesuaian' && <PenyesuaianPage />}
+          {currentView === 'pengeluaran' && <ExpensePage />}
+          {currentView === 'pengaturan' && <SettingsPage isPrinterReady={isPrinterReady} printerAddress={printerAddress} onSearchBluetooth={handleSearchBluetooth} printerCharacteristic={printerCharacteristicRef.current} />}
+          {currentView === 'laporan-retur' && <LaporanReturPage />}
+          {currentView === 'laporan' && <LaporanPage />}
+          {currentView === 'transfer-stok' && <TransferStokPage />}
+          {currentView === 'kasir' && <KasirPage editData={editingTransactionForKasir} isPrinterReady={isPrinterReady} onSearchBluetooth={handleSearchBluetooth} onPrint={printReceipt} onFinished={() => { const wasEditing = !!editingTransactionForKasir; setEditingTransactionForKasir(null); if (wasEditing) window.history.back(); }} />}
+        </>
+      )}
+
+      {/* PWA Update Notification - Selalu muncul di semua view jika ada update */}
+      {needRefresh && (
+        <div 
+          onClick={() => updateServiceWorker(true)}
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] bg-stone-900 text-white px-5 py-4 rounded-2xl shadow-xl flex items-center gap-4 animate-in slide-in-from-bottom border border-amber-500 cursor-pointer active:scale-95 transition-transform"
+        >
+          <div className="bg-amber-500 p-2 rounded-xl text-stone-900">
+            <RefreshCw size={20} className="animate-spin" />
+          </div>
+          <div className="text-left">
+            <p className="text-sm font-bold leading-none mb-1">Versi Baru Tersedia!</p>
+            <p className="text-[10px] text-stone-400 font-medium">Klik di sini untuk update aplikasi</p>
           </div>
         </div>
-      </header>
-
-      {/* Main Menu Grid */}
-      <main className="max-w-md mx-auto -mt-6 p-3">
-        <div className="grid grid-cols-3 gap-2">
-          {menuItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => navigateTo(item.id as View)}
-              className="flex flex-col items-center justify-center p-3 bg-white rounded-2xl shadow-sm border border-stone-100 active:scale-95 transition-transform"
-            >
-              <div className={`p-2.5 rounded-xl mb-1.5 ${item.color}`}>
-                {item.icon}
-              </div>
-              <span className="text-xs font-bold text-stone-700">{item.label}</span>
-            </button>
-          ))}
-        </div>
-      </main>
-
-      <footer className="mt-6 pb-4 text-center text-stone-400 text-xs">
-        &copy; 2026 Roti Manis Arif • Mobile POS
-      </footer>
+      )}
     </div>
-  )
+  );
 }
