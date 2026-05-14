@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { db, type Customer } from '../db';
-import { Plus, Users, Phone, Search, CheckCircle2, AlertCircle, Edit3 } from 'lucide-react';
+import { Plus, Users, Phone, Search, CheckCircle2, AlertCircle, Edit3, MapPin } from 'lucide-react';
 import { formatRupiah } from '../utils/formatters';
 
 export default function CustomerPage() {
@@ -14,7 +14,8 @@ export default function CustomerPage() {
     nama: '',
     telepon: '',
     status: 'aktif',
-    hutang: 0
+    hutang: 0,
+    maps: ''
   });
 
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -42,7 +43,7 @@ export default function CustomerPage() {
         await db.customers.add(formData);
         showToast('Pelanggan baru ditambahkan!', 'success');
       }
-      setFormData({ nama: '', telepon: '', status: 'aktif', hutang: 0 });
+      setFormData({ nama: '', telepon: '', status: 'aktif', hutang: 0, maps: '' });
       setEditingId(null);
       setShowForm(false);
       setShowConfirmModal(false);
@@ -96,7 +97,7 @@ export default function CustomerPage() {
         onClick={() => {
           if (showForm && editingId) {
             setEditingId(null);
-            setFormData({ nama: '', telepon: '', status: 'aktif', hutang: 0 });
+          setFormData({ nama: '', telepon: '', status: 'aktif', hutang: 0, maps: '' });
           }
           setShowForm(!showForm);
         }}
@@ -114,6 +115,10 @@ export default function CustomerPage() {
           <div>
             <label className="text-xs font-bold text-stone-500 mb-1 block">Telepon</label>
             <input type="tel" value={formData.telepon} onChange={e => setFormData({...formData, telepon: e.target.value})} className="w-full p-2.5 bg-stone-100 rounded-lg text-sm outline-none focus:ring-2 ring-orange-400" />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-stone-500 mb-1 block">Link Google Maps</label>
+            <input type="url" value={formData.maps || ''} onChange={e => setFormData({...formData, maps: e.target.value})} className="w-full p-2.5 bg-stone-100 rounded-lg text-sm outline-none focus:ring-2 ring-orange-400" placeholder="https://goo.gl/maps/..." />
           </div>
           <div>
             <label className="text-xs font-bold text-stone-500 mb-1 block">Status</label>
@@ -175,6 +180,16 @@ export default function CustomerPage() {
               <div className="flex items-center gap-1.5 text-xs text-stone-500">
                 <Phone size={12} /> {c.telepon || '-'}
               </div>
+              {c.maps && (
+                <a 
+                  href={c.maps} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-xs text-blue-500 mt-1 hover:underline"
+                >
+                  <MapPin size={12} /> Buka Lokasi (Maps)
+                </a>
+              )}
             </div>
           </div>
         ))}

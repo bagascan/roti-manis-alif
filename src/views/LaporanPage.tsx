@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { db, Transaction, Expense, Customer, Product } from '../db';
-import { Search, BarChart3, TrendingUp, TrendingDown, Wallet } from 'lucide-react';
+import { db, Transaction, Expense, Customer, Product, Restock } from '../db';
+import { Search, BarChart3, TrendingUp, TrendingDown, Wallet, Package } from 'lucide-react';
 import { formatRupiah, getLocalDateString } from '../utils/formatters';
 
 export default function LaporanPage() {
@@ -10,6 +10,7 @@ export default function LaporanPage() {
   const [transactions, setTransactions] = useState<(Transaction & { customerName: string })[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [restocks, setRestocks] = useState<Restock[]>([]);
 
   const loadData = useCallback(async () => { // Wrapped in useCallback
     // Construct dates in local time to avoid timezone ambiguities
@@ -19,11 +20,12 @@ export default function LaporanPage() {
     const [yearEnd, monthEnd, dayEnd] = endDate.split('-').map(Number);
     const localEnd = new Date(yearEnd, monthEnd - 1, dayEnd, 23, 59, 59, 999);
 
-    const [tData, eData, cData, pData] = await Promise.all([
+    const [tData, eData, cData, pData, rData] = await Promise.all([
       db.transactions.where('tanggal').between(localStart, localEnd, true, true).toArray(), // Use localStart and localEnd
       db.expenses.where('tanggal').between(localStart, localEnd, true, true).toArray() as Promise<Expense[]>,
       db.customers.toArray() as Promise<Customer[]>,
-      db.products.toArray() as Promise<Product[]>
+      db.products.toArray() as Promise<Product[]>,
+      db.restocks.where('tanggal').between(localStart, localEnd, true, true).toArray()
     ]);
     
     const enrichedT: (Transaction & { customerName: string })[] = tData.map(t => ({
@@ -34,6 +36,7 @@ export default function LaporanPage() {
     setTransactions(enrichedT);
     setProducts(pData);
     setExpenses(eData);
+    setRestocks(rData);
   }, [startDate, endDate]);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -73,8 +76,11 @@ export default function LaporanPage() {
     });
   });
 
-  const totalExpenses = expenses.reduce((acc, e) => acc + e.nominal, 0);
-  const netProfit = (grossSales - grossReturns - totalCOGS) - totalExpenses;
+  const totalExpenses = expenses.filter(e => e.tipe !== 'pemasukkan').reduce((acc, e) => acc + e.nominal, 0);
+  const totalOtherIncome = expenses.filter(e => e.tipe === 'pemasukkan').reduce((acc, e) => acc + e.nominal, 0);
+  const totalKulaan = restocks.reduce((acc, r) => acc + r.total, 0);
+  
+  const netProfit = (grossSales - grossReturns - totalCOGS) - totalExpenses + totalOtherIncome;
 
   return (
     <main className="flex-1 overflow-y-auto p-4 bg-stone-50 space-y-4">
@@ -95,7 +101,7 @@ export default function LaporanPage() {
         <div className="bg-white p-3 rounded-xl shadow-sm border border-stone-100">
           <div className="flex items-center gap-1.5 mb-1">
             <TrendingUp size={12} className="text-green-500" />
-            <p className="text-[9px] text-stone-400 uppercase font-bold">Penjualan Kotor</p>
+            <p className="text-[9px] text-stone-400 uppercase font-bold">Pembelian Kotor</p>
           </div>
           <p className="text-sm font-bold text-stone-700">Rp {formatRupiah(grossSales)}</p>
         </div>
@@ -112,6 +118,20 @@ export default function LaporanPage() {
             <p className="text-[9px] text-stone-400 uppercase font-bold">Pengeluaran</p>
           </div>
           <p className="text-sm font-bold text-stone-700">Rp {formatRupiah(totalExpenses)}</p>
+        </div>
+        <div className="bg-white p-3 rounded-xl shadow-sm border border-stone-100">
+          <div className="flex items-center gap-1.5 mb-1">
+            <TrendingUp size={12} className="text-blue-500" />
+            <p className="text-[9px] text-stone-400 uppercase font-bold">Pemasukkan Lain</p>
+          </div>
+          <p className="text-sm font-bold text-stone-700">Rp {formatRupiah(totalOtherIncome)}</p>
+        </div>
+        <div className="bg-white p-3 rounded-xl shadow-sm border border-stone-100">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Package size={12} className="text-amber-500" />
+            <p className="text-[9px] text-stone-400 uppercase font-bold">Kulaan (Restok)</p>
+          </div>
+          <p className="text-sm font-bold text-stone-700">Rp {formatRupiah(totalKulaan)}</p>
         </div>
         <div className="bg-stone-800 p-3 rounded-xl shadow-sm border border-stone-700">
           <div className="flex items-center gap-1.5 mb-1">
@@ -143,12 +163,11 @@ export default function LaporanPage() {
               <div key={`trans-${item.id}-${idx}`} className="bg-white border border-stone-100 p-3 rounded-xl shadow-sm flex justify-between items-center">
                 <div>
                   <div className="flex items-center gap-2 mb-0.5">
-                    <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full ${item.tipe === 'penjualan' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'} uppercase`}>{item.tipe}</span>
                     <h3 className="text-xs font-bold text-stone-800">#{item.id}</h3>
                   </div>
                   <p className="text-[10px] text-stone-400">{new Date(item.tanggal).toLocaleDateString('id-ID')} • {item.customerName}</p>
                 </div>
-                <p className={`text-sm font-bold ${item.tipe === 'penjualan' ? 'text-stone-700' : 'text-blue-600'}`}>{item.tipe === 'retur' ? '-' : ''}Rp {formatRupiah(item.total)}</p>
+                <p className="text-sm font-bold text-stone-700">{item.total < 0 ? '-' : ''}Rp {formatRupiah(Math.abs(item.total))}</p>
               </div>
             );
           } else {
@@ -156,12 +175,12 @@ export default function LaporanPage() {
               <div key={`exp-${item.id}-${idx}`} className="bg-white border border-stone-100 p-3 rounded-xl shadow-sm flex justify-between items-center border-l-4 border-l-red-400">
                 <div>
                   <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 uppercase">PENGELUARAN</span>
+                    <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-full uppercase ${item.tipe === 'pemasukkan' ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-600'}`}>{item.tipe === 'pemasukkan' ? 'PEMASUKKAN' : 'PENGELUARAN'}</span>
                     <h3 className="text-xs font-bold text-stone-800">{item.kategori}</h3>
                   </div>
                   <p className="text-[10px] text-stone-400">{new Date(item.tanggal).toLocaleDateString('id-ID')} • {item.keterangan}</p>
                 </div>
-                <p className="text-sm font-bold text-red-600">-Rp {formatRupiah(item.nominal)}</p>
+                <p className={`text-sm font-bold ${item.tipe === 'pemasukkan' ? 'text-blue-600' : 'text-red-600'}`}>{item.tipe === 'pemasukkan' ? '' : '-'}Rp {formatRupiah(item.nominal)}</p>
               </div>
             );
           }

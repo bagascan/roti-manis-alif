@@ -10,9 +10,9 @@ export default defineConfig({
       registerType: 'autoUpdate', // Ini yang mengaktifkan skipWaiting & clientsClaim secara otomatis
       includeAssets: ['logo.jpeg', 'logo-192x192.png', 'logo-512x512.png'],
       manifest: {
-        name: 'ROTI MANIS ALIF',
-        short_name: 'Alif POS',
-        description: 'Aplikasi Kasir Roti Manis Alif',
+        name: 'ROTI MANIS ARIF',
+        short_name: 'Arif POS',
+        description: 'Aplikasi Kasir Roti Manis Arif',
         theme_color: '#f59e0b',
         background_color: '#fafaf9',
         display: 'standalone',

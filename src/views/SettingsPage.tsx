@@ -2,91 +2,69 @@ import { useState } from 'react';
 import { db } from '../db';
 import { Printer, Database, Trash2, Download, Upload, CheckCircle2, AlertCircle, Search, RefreshCw } from 'lucide-react';
 
-interface BluetoothGATTServer {
-  connect(): Promise<BluetoothGATTServer>;
-  getPrimaryService(service: string | number): Promise<unknown>;
+interface BluetoothGATTCharacteristic {
+  writeValue(value: BufferSource): Promise<void>;
 }
 
-interface BluetoothDevice {
-  name?: string;
-  gatt: BluetoothGATTServer;
+interface SettingsProps {
+  isPrinterReady: boolean;
+  printerAddress: string;
+  onSearchBluetooth: () => Promise<boolean>;
+  printerCharacteristic: BluetoothGATTCharacteristic | null;
 }
 
-export default function SettingsPage() {
-  const [printerAddress, setPrinterAddress] = useState(localStorage.getItem('printer_address') || '');
+export default function SettingsPage({ isPrinterReady, printerAddress, onSearchBluetooth, printerCharacteristic }: SettingsProps) {
   const [appLogo, setAppLogo] = useState(localStorage.getItem('app_logo') || '/logo.jpeg');
   const [storeAddress, setStoreAddress] = useState(localStorage.getItem('store_address') || '');
   const [storePhone, setStorePhone] = useState(localStorage.getItem('store_phone') || '');
+  const [receiptFooter, setReceiptFooter] = useState(localStorage.getItem('receipt_footer') || 'Terima Kasih Atas\nKunjungan Anda');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [isPrinterReady, setIsPrinterReady] = useState(false);
 
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3000);
   };
 
-  const handleSearchBluetooth = async () => {
-    // Periksa apakah browser mendukung Bluetooth
-    const nav = navigator as Navigator & {
-      bluetooth?: {
-        requestDevice(options: { 
-          acceptAllDevices?: boolean; 
-          filters?: Array<{ services?: string[] | number[] }>;
-          optionalServices?: string[] | number[];
-        }): Promise<BluetoothDevice>;
-      };
-    };
-
-    if (!nav.bluetooth) {
-      showToast('Bluetooth tidak didukung di browser ini', 'error');
-      return;
-    }
-
-    try {
-      // 1. Meminta pengguna memilih perangkat Bluetooth (Filter spesifik untuk printer thermal)
-      const device = await nav.bluetooth.requestDevice({
-        filters: [{ services: ['000018f0-0000-1000-8000-00805f9b34fb'] }], // UUID Standar Printer Thermal
-        optionalServices: ['000018f0-0000-1000-8000-00805f9b34fb']
-      });
-
-      if (device && device.name) {
-        showToast(`Menghubungkan ke ${device.name}...`, 'success');
-        
-        // 2. Mencoba koneksi ke GATT Server
-        const server = await device.gatt.connect();
-        
-        // 3. Verifikasi apakah service printer tersedia
-        const service = await server.getPrimaryService('000018f0-0000-1000-8000-00805f9b34fb');
-        if (service) {
-          setIsPrinterReady(true);
-        setPrinterAddress(device.name);
-        localStorage.setItem('printer_address', device.name);
-          showToast(`Printer ${device.name} Siap Digunakan!`, 'success');
-        }
-      }
-    } catch {
-      setIsPrinterReady(false);
-      showToast('Pencarian printer dibatalkan', 'error');
+  const handleSearch = async () => {
+    const success = await onSearchBluetooth();
+    if (success) {
+      showToast('Printer berhasil dihubungkan!', 'success');
+    } else {
+      showToast('Gagal menghubungkan printer', 'error');
     }
   };
 
   // Fungsi Test Print untuk membuktikan koneksi aktif
   const handleTestPrint = async () => {
-    if (!isPrinterReady) {
-      showToast('Printer belum terkoneksi!', 'error');
+     if (!isPrinterReady || !printerCharacteristic) {
+      showToast('Printer tidak siap!', 'error');
       return;
     }
     
     try {
-      // Logika pengiriman byte data thermal akan dilakukan di sini
-      // Untuk saat ini kita beri feedback sukses
+      const encoder = new TextEncoder();
+      // ESC/POS Commands: Initialize, Center, Bold On, Text, Bold Off, Feed
+      const commands = new Uint8Array([
+        0x1B, 0x40,             // ESC @ (Initialize)
+        0x1B, 0x61, 0x01,       // ESC a 1 (Align Center)
+        0x1B, 0x45, 0x01,       // ESC E 1 (Bold On)
+        ...encoder.encode("ROTI MANIS ARIF\n"),
+        0x1B, 0x45, 0x00,       // ESC E 0 (Bold Off)
+        ...encoder.encode("Test Print Berhasil!\n\n\n\n"),
+      ]);
+
+      // Menggunakan chunking untuk stabilitas koneksi pada printer thermal
+      const CHUNK_SIZE = 20;
+      for (let i = 0; i < commands.length; i += CHUNK_SIZE) {
+        const chunk = commands.slice(i, i + CHUNK_SIZE);
+        await printerCharacteristic.writeValue(chunk);
+        // Tambahkan delay untuk mencegah koneksi terputus saat test print
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+
       showToast('Mengirim data uji coba...', 'success');
-      setTimeout(() => {
-        showToast('Test print berhasil!', 'success');
-      }, 1500);
     } catch {
-      setIsPrinterReady(false);
       showToast('Printer terputus!', 'error');
     }
   };
@@ -121,7 +99,7 @@ export default function SettingsPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `backup-alif-bakery-${new Date().toISOString().split('T')[0]}.json`;
+      a.download = `backup-arif-bakery-${new Date().toISOString().split('T')[0]}.json`;
       a.click();
       showToast('Backup berhasil diunduh', 'success');
     } catch {
@@ -202,6 +180,16 @@ export default function SettingsPage() {
             <label className="text-xs font-bold text-stone-500 mb-1.5 block">No. HP / WhatsApp</label>
             <input type="tel" value={storePhone} onChange={e => { setStorePhone(e.target.value); localStorage.setItem('store_phone', e.target.value); }} placeholder="0812..." className="w-full p-3 bg-stone-100 rounded-xl text-sm outline-none focus:ring-2 ring-orange-400" />
           </div>
+          <div>
+            <label className="text-xs font-bold text-stone-500 mb-1.5 block">Footer Nota (Gunakan Enter untuk Baris Baru)</label>
+            <textarea 
+              value={receiptFooter} 
+              onChange={e => { setReceiptFooter(e.target.value); localStorage.setItem('receipt_footer', e.target.value); }} 
+              placeholder="Terima Kasih..." 
+              rows={3} 
+              className="w-full p-3 bg-stone-100 rounded-xl text-sm outline-none focus:ring-2 ring-orange-400 resize-none" 
+            />
+          </div>
         </div>
       </section>
 
@@ -247,7 +235,7 @@ export default function SettingsPage() {
             </div>
           </div>
           <button 
-            onClick={handleSearchBluetooth}
+            onClick={handleSearch}
             className="w-full py-4 bg-blue-600 text-white rounded-2xl text-base font-bold shadow-md active:scale-95 transition-transform flex items-center justify-center gap-2"
           >
             <Search size={18} />
@@ -256,7 +244,7 @@ export default function SettingsPage() {
           
           {printerAddress && (
             <button 
-              onClick={isPrinterReady ? handleTestPrint : handleSearchBluetooth}
+              onClick={isPrinterReady ? handleTestPrint : handleSearch}
               className={`w-full py-3 rounded-2xl text-sm font-bold border-2 transition-all flex items-center justify-center gap-2 ${isPrinterReady ? 'border-green-100 text-green-600 bg-green-50' : 'border-stone-100 text-stone-400'}`}
             >
               {isPrinterReady ? <CheckCircle2 size={16} /> : <RefreshCw size={16} />}

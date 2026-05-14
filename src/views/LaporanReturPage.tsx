@@ -28,26 +28,35 @@ export default function LaporanReturPage() {
       db.transactions
         .where('tanggal')
         .between(localStart, localEnd, true, true)
-        .filter(t => t.tipe === 'retur')
         .toArray(),
       db.products.toArray(), // Ensure Product type is imported if needed for this toArray()
       db.customers.toArray() // Ensure Customer type is imported if needed for this toArray()
     ]);
 
-    const enriched: EnrichedRetur[] = transactions.map(t => ({
-      ...t,
-      customerName: t.customerId ? (customers.find(c => c.id === t.customerId)?.nama || 'Umum') : 'Umum',
-      items: t.items.map(item => ({
-        ...item,
-        productName: products.find(p => p.id === item.productId)?.nama || 'Produk Terhapus'
-      }))
-    }));
+    const enriched: EnrichedRetur[] = transactions
+      .map(t => {
+        const returnItems = t.items.filter(item => item.subtotal < 0);
+        if (returnItems.length === 0) return null;
+
+        return {
+          ...t,
+          total: returnItems.reduce((acc, item) => acc + Math.abs(item.subtotal), 0),
+          customerName: t.customerId ? (customers.find(c => c.id === t.customerId)?.nama || 'Umum') : 'Umum',
+          items: returnItems.map(item => ({
+            ...item,
+            productName: products.find(p => p.id === item.productId)?.nama || 'Produk Terhapus'
+          }))
+        };
+      })
+      .filter((t): t is EnrichedRetur => t !== null);
 
     setData(enriched);
   }, [startDate, endDate]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // Filter berdasarkan item retur yang sudah difilter di loadData
+  // Total refund dan total qty juga harus berdasarkan item retur saja
   const filtered = data.filter(t => 
     t.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
     t.items.some(i => i.productName.toLowerCase().includes(searchTerm.toLowerCase()))
@@ -55,8 +64,8 @@ export default function LaporanReturPage() {
 
   const totalRefund = filtered.reduce((acc, t) => acc + t.total, 0);
   const totalQty = filtered.reduce((acc, t) => acc + t.items.reduce((sum: number, i) => sum + i.qty, 0), 0);
-
-  return (
+  
+  return ( 
     <main className="flex-1 overflow-y-auto p-4 bg-stone-50 space-y-4">
       {/* Date Filters */}
       <div className="grid grid-cols-2 gap-2 bg-white p-3 rounded-2xl shadow-sm border border-stone-100">

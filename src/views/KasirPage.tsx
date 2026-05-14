@@ -25,10 +25,13 @@ interface CartItem extends Product {
 
 interface KasirProps {
   editData?: EnrichedTransaction | null;
+  isPrinterReady: boolean;
+  onSearchBluetooth: () => Promise<boolean>;
+  onPrint: (transaction: EnrichedTransaction) => Promise<boolean>;
   onFinished?: () => void;
 }
 
-export default function KasirPage({ editData, onFinished }: KasirProps) {
+export default function KasirPage({ editData, isPrinterReady, onSearchBluetooth, onPrint, onFinished }: KasirProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   
@@ -164,18 +167,24 @@ export default function KasirPage({ editData, onFinished }: KasirProps) {
         }
       }
 
+      let enrichedToProcess: EnrichedTransaction | null = null;
+
       await db.transaction('rw', [db.products, db.transactions, db.customers], async () => {
         const allProducts = await db.products.toArray();
         const transactionItems = [];
         for (const item of cart) {
-          const stockChange = item.cartUnit === 'satuan' ? item.cartQty : item.cartQty / item.isiPerSatuan;
+          const stockChange = Number(item.cartUnit === 'satuan' ? item.cartQty : item.cartQty / item.isiPerSatuan);
           const p = await db.products.get(item.id!);
           
           if (p) {
-            if (mode === 'penjualan') {
-              await db.products.update(p.id!, { stokToko: p.stokToko - stockChange });
-            } else {
-              await db.products.update(p.id!, { stokRetur: p.stokRetur + stockChange });
+            // Gunakan item.itemMode (mode saat barang dimasukkan ke keranjang)
+            // agar stok terpotong dengan benar meski user pindah tab tab saat checkout
+            if (item.itemMode === 'penjualan') {
+              const currentStock = Number(p.stokToko || 0);
+              await db.products.update(p.id!, { stokToko: currentStock - stockChange });
+            } else if (item.itemMode === 'retur') {
+              const currentReturnStock = Number(p.stokRetur || 0);
+              await db.products.update(p.id!, { stokRetur: currentReturnStock + stockChange });
             }
           }
 
@@ -217,29 +226,32 @@ export default function KasirPage({ editData, onFinished }: KasirProps) {
           items: enrichedItems
         };
 
+        enrichedToProcess = enriched;
+
         if (editData?.id) {
           // Untuk update seluruh objek, gunakan put dengan id yang sudah ada
           await db.transactions.put({ ...payload, id: editData.id });
-          showToast('Transaksi berhasil diperbarui!', 'success');
         } else {
           const newId = await db.transactions.add(payload);
-          enriched.id = newId as number;
-         showToast('Transaksi berhasil disimpan!', 'success');
-        }
-      // ALUR AUTO-PRINT
-        const printerAddr = localStorage.getItem('printer_address');
-        if (printerAddr) {
-          showToast(`Mencetak Nota ke ${printerAddr}...`, 'success');
-          resetKasir();
-          if (onFinished) onFinished();
-        } else {
-          setReceiptData(enriched);
-          setShowReceiptModal(true);
+          enrichedToProcess.id = newId as number;
         }
       });
 
-      loadData();
-    } catch {
+      // Logika UI & Cetak dipindah ke luar transaksi database
+      if (enrichedToProcess) {
+        showToast(editData ? 'Transaksi diperbarui!' : 'Transaksi disimpan!', 'success');
+        if (isPrinterReady) {
+          await onPrint(enrichedToProcess);
+          resetKasir();
+          if (onFinished) onFinished();
+        } else {
+          setReceiptData(enrichedToProcess);
+          setShowReceiptModal(true);
+        }
+        loadData();
+      }
+    } catch (err) {
+      console.error(err);
       showToast('Gagal memproses transaksi!', 'error');
     }
   };
@@ -522,6 +534,12 @@ export default function KasirPage({ editData, onFinished }: KasirProps) {
                   <span className="text-lg font-bold text-blue-600">Rp {formatRupiah(jumlahBayar - totalCart)}</span>
                 </div>
               )}
+              {totalCart > jumlahBayar && jumlahBayar > 0 && (
+                <div className="flex justify-between items-center pb-2">
+                  <span className="text-stone-500 font-medium text-sm">Kurang</span>
+                  <span className="text-lg font-bold text-rose-600">- Rp {formatRupiah(totalCart - jumlahBayar)}</span>
+                </div>
+              )}
               <button 
                 onClick={handleCheckout} // Tombol ini hanya akan muncul jika valid
                 className={`w-full py-3 text-white rounded-xl font-black text-lg shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 ${mode === 'retur' ? 'bg-blue-600 shadow-blue-200' : 'bg-green-600 shadow-green-200'}`}
@@ -583,12 +601,14 @@ export default function KasirPage({ editData, onFinished }: KasirProps) {
       {showReceiptModal && receiptData && (
         <ReceiptModal 
           transaction={receiptData}
+          isPrinterReady={isPrinterReady}
+          onConnect={onSearchBluetooth}
           onClose={() => {
             setShowReceiptModal(false);
             resetKasir();
             if (onFinished) onFinished();
           }}
-          onPrint={(t) => showToast(`Mencetak Nota #${t.id}...`, 'success')}
+          onPrint={onPrint}
         />
       )}
 

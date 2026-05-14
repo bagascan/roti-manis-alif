@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { db, type Transaction, type Customer, type Product } from '../db';
-import { Search, History, Calendar, User, X, Edit3, Trash2, CheckCircle2, AlertCircle, Printer, Wallet } from 'lucide-react';
+import { Search, History, Calendar, User, X, Edit3, Trash2, CheckCircle2, AlertCircle, Printer, Wallet, RefreshCw } from 'lucide-react';
 import { formatRupiah, parseRupiah } from '../utils/formatters';
 import html2canvas from 'html2canvas';
 
@@ -11,7 +11,14 @@ export type EnrichedTransaction = Omit<Transaction, 'items'> & {
   items: EnrichedTransactionItem[];
 };
 
-export default function HistoryPage({ onEditTransaction }: { onEditTransaction: (transaction: EnrichedTransaction) => void }) {
+interface HistoryProps {
+  isPrinterReady: boolean;
+  onPrint: (transaction: EnrichedTransaction) => Promise<boolean>;
+  onSearchBluetooth: () => Promise<boolean>;
+  onEditTransaction: (transaction: EnrichedTransaction) => void;
+}
+
+export default function HistoryPage({ isPrinterReady, onPrint, onSearchBluetooth, onEditTransaction }: HistoryProps) {
   const [transactions, setTransactions] = useState<EnrichedTransaction[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'lunas' | 'belum_lunas'>('lunas');
@@ -60,31 +67,15 @@ export default function HistoryPage({ onEditTransaction }: { onEditTransaction: 
   };
 
   const handlePrintOrShowModal = (t: EnrichedTransaction) => {
-    const printerAddr = localStorage.getItem('printer_address');
-    if (!printerAddr) {
-      // If no printer address, show the receipt modal
+    if (!isPrinterReady) {
       setReceiptDataForModal(t);
       setShowReceiptModal(true);
     } else {
-      // If printer address exists, proceed to print
-      // In a real app, you would send 'generateReceiptText(t)' to the printer API
-      showToast(`Mencetak Nota #${t.id} ke ${printerAddr}...`, 'success');
+      onPrint(t);
     }
   };
 
   useEffect(() => { setSwipedId(null); }, [statusFilter, searchTerm]);
-
-  // Function to simulate printing from the modal
-  const handlePrintFromModal = (t: EnrichedTransaction) => {
-    const printerAddr = localStorage.getItem('printer_address');
-    if (!printerAddr) {
-      showToast('Harap atur alamat printer di Pengaturan!', 'error');
-      return; // Do nothing if printer is still not configured
-    }
-    
-    // Simulasi pengiriman data ke printer thermal
-    showToast(`Mencetak Nota #${t.id}...`, 'success');
-  };
 
   const handleDelete = async (id: number) => {
     const t = await db.transactions.get(id);
@@ -94,11 +85,13 @@ export default function HistoryPage({ onEditTransaction }: { onEditTransaction: 
           for (const item of t.items) {
             const p = await db.products.get(item.productId);
             if (p) {
-              const stockChange = item.unit === 'satuan' ? item.qty : item.qty / p.isiPerSatuan;
-              if (t.tipe === 'penjualan') {
-                await db.products.update(p.id!, { stokToko: p.stokToko + stockChange }); // Kembalikan stok toko
-              } else if (t.tipe === 'retur') {
-                await db.products.update(p.id!, { stokRetur: p.stokRetur - stockChange }); // Kurangi stok retur
+              const stockChange = Number(item.unit === 'satuan' ? item.qty : item.qty / p.isiPerSatuan);
+              
+              // Periksa subtotal item secara individu untuk menentukan jenis pergerakan stok
+              if (item.subtotal >= 0) {
+                await db.products.update(p.id!, { stokToko: Number(p.stokToko || 0) + stockChange }); // Kembalikan ke stok toko
+              } else {
+                await db.products.update(p.id!, { stokRetur: Number(p.stokRetur || 0) - stockChange }); // Kurangi dari stok retur
               }
             }
           }
@@ -127,11 +120,13 @@ export default function HistoryPage({ onEditTransaction }: { onEditTransaction: 
         for (const item of transaction.items) {
           const p = await db.products.get(item.productId);
           if (p) {
-            const stockChange = item.unit === 'satuan' ? item.qty : item.qty / p.isiPerSatuan;
-            if (transaction.tipe === 'penjualan') {
-              await db.products.update(p.id!, { stokToko: p.stokToko + stockChange }); // Kembalikan stok toko
-            } else if (transaction.tipe === 'retur') {
-              await db.products.update(p.id!, { stokRetur: p.stokRetur - stockChange }); // Kurangi stok retur
+            const stockChange = Number(item.unit === 'satuan' ? item.qty : item.qty / p.isiPerSatuan);
+            
+            // Periksa subtotal item secara individu saat mengembalikan stok untuk pengeditan
+            if (item.subtotal >= 0) {
+              await db.products.update(p.id!, { stokToko: Number(p.stokToko || 0) + stockChange }); // Kembalikan ke stok toko
+            } else {
+              await db.products.update(p.id!, { stokRetur: Number(p.stokRetur || 0) - stockChange }); // Kurangi dari stok retur
             }
           }
         }
@@ -294,15 +289,15 @@ export default function HistoryPage({ onEditTransaction }: { onEditTransaction: 
                  <p className="text-xs text-stone-400">{new Date(detailTransaction.tanggal).toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' })} • {detailTransaction.customerName}</p>
               </div>
               <div className="flex items-center gap-2">
-                <button onClick={() => handlePrintFromModal(detailTransaction)} className="p-2 bg-blue-50 text-blue-600 rounded-full active:scale-95 transition-transform"><Printer size={16} /></button>
+                <button onClick={() => handlePrintOrShowModal(detailTransaction)} className="p-2 bg-blue-50 text-blue-600 rounded-full active:scale-95 transition-transform"><Printer size={16} /></button>
                 <button onClick={() => setDetailTransaction(null)} className="p-1.5 bg-stone-100 rounded-full text-stone-400"><X size={16} /></button>
               </div>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {detailTransaction.items.map((item, idx) => (
-                <div key={idx} className="bg-stone-50 p-3 rounded-xl border border-stone-100">
+                <div key={idx} className={`p-3 rounded-xl border ${item.subtotal < 0 ? 'bg-rose-50/50 border-rose-100' : 'bg-stone-50 border-stone-100'}`}>
                   <div className="flex justify-between items-start mb-2">
-                    <h4 className="text-sm font-bold text-stone-700">{item.productName}</h4>
+                    <h4 className={`text-sm font-bold ${item.subtotal < 0 ? 'text-rose-700' : 'text-stone-700'}`}>{item.productName}</h4>
                     <span className="text-xs bg-white px-2 py-0.5 rounded border border-stone-100 text-stone-500 font-bold uppercase">
                       {item.qty} {item.unit === 'satuan' ? 'Pack' : 'Pcs'}
                     </span>
@@ -310,7 +305,7 @@ export default function HistoryPage({ onEditTransaction }: { onEditTransaction: 
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div>
                       <p className="text-stone-400 font-bold uppercase text-[9px]">Harga Jual</p>
-                      <p className="text-stone-600 font-bold">Rp {formatRupiah(item.harga)}</p>
+                      <p className={`font-bold ${item.subtotal < 0 ? 'text-rose-600' : 'text-stone-600'}`}>Rp {formatRupiah(item.harga)}</p>
                     </div>
                     <div className="text-right">
                       <p className="text-stone-400 font-bold uppercase text-[9px]">Harga Beli</p>
@@ -320,7 +315,7 @@ export default function HistoryPage({ onEditTransaction }: { onEditTransaction: 
                   
                   <div className="mt-2 pt-2 border-t border-stone-200/50 flex justify-between items-center">
                     <span className="text-stone-400 font-bold uppercase text-[9px]">Subtotal</span>
-                    <span className="text-sm font-black text-blue-600">Rp {formatRupiah(item.subtotal)}</span>
+                    <span className={`text-sm font-black ${item.subtotal < 0 ? 'text-rose-600' : 'text-blue-600'}`}>{item.subtotal < 0 ? '-' : ''}Rp {formatRupiah(Math.abs(item.subtotal))}</span>
                   </div>
                 </div>
               ))}
@@ -399,8 +394,10 @@ export default function HistoryPage({ onEditTransaction }: { onEditTransaction: 
       {showReceiptModal && receiptDataForModal && (
         <ReceiptModal 
           transaction={receiptDataForModal}
+          isPrinterReady={isPrinterReady}
+          onConnect={onSearchBluetooth}
           onClose={() => setShowReceiptModal(false)}
-          onPrint={handlePrintFromModal}
+          onPrint={onPrint}
         />
       )}
     </main>
@@ -408,7 +405,19 @@ export default function HistoryPage({ onEditTransaction }: { onEditTransaction: 
 }
 
 /* NEW RECEIPT MODAL COMPONENT */
-export const ReceiptModal = ({ transaction, onClose, onPrint }: { transaction: EnrichedTransaction; onClose: () => void; onPrint: (t: EnrichedTransaction) => void; onShareWhatsApp?: (t: EnrichedTransaction) => void; }) => {
+export const ReceiptModal = ({ 
+  transaction, 
+  onClose, 
+  onPrint,
+  isPrinterReady,
+  onConnect
+}: { 
+  transaction: EnrichedTransaction; 
+  onClose: () => void; 
+  onPrint: (t: EnrichedTransaction) => void;
+  isPrinterReady?: boolean;
+  onConnect?: () => Promise<boolean>;
+}) => {
   const receiptRef = useRef<HTMLDivElement>(null);
 
   const formatRupiah = (value: number | string) => {
@@ -418,12 +427,29 @@ export const ReceiptModal = ({ transaction, onClose, onPrint }: { transaction: E
     return num.toLocaleString('id-ID');
   };
 
+  const salesItems = transaction.items.filter(i => i.subtotal >= 0);
+  const returnItems = transaction.items.filter(i => i.subtotal < 0);
+  const totalSales = salesItems.reduce((acc, item) => acc + item.subtotal, 0);
+  const totalReturns = returnItems.reduce((acc, item) => acc + Math.abs(item.subtotal), 0);
+
   const handleShareImage = async () => {
     if (!receiptRef.current) return;
     
+    let receiptElement: HTMLDivElement | null = null;
+    let originalOverflow = '';
+    let originalMaxHeight = '';
+
     try {
+      receiptElement = receiptRef.current;
+      originalOverflow = receiptElement.style.overflow;
+      originalMaxHeight = receiptElement.style.maxHeight;
+
+      // Temporarily adjust styles to ensure full content is captured
+      receiptElement.style.overflow = 'visible';
+      receiptElement.style.maxHeight = 'none';
+
       // Generate Canvas from the receipt element using html2canvas
-      const canvas = await html2canvas(receiptRef.current, {
+      const canvas = await html2canvas(receiptElement, {
         backgroundColor: '#ffffff',
       });
       const dataUrl = canvas.toDataURL('image/png');
@@ -435,7 +461,7 @@ export const ReceiptModal = ({ transaction, onClose, onPrint }: { transaction: E
       if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({
           files: [file],
-          title: `Nota Roti Manis Alif #${transaction.id}`,
+          title: `Nota Roti Manis Arif #${transaction.id}`,
         });
       } else {
         // Fallback: download the image if sharing is not supported
@@ -446,6 +472,13 @@ export const ReceiptModal = ({ transaction, onClose, onPrint }: { transaction: E
       }
     } catch (error) {
       console.error('Error sharing receipt image:', error);
+    }
+    finally {
+      if (receiptElement) {
+        // Revert styles back
+        receiptElement.style.overflow = originalOverflow;
+        receiptElement.style.maxHeight = originalMaxHeight;
+      }
     }
   };
 
@@ -464,7 +497,7 @@ export const ReceiptModal = ({ transaction, onClose, onPrint }: { transaction: E
               className="w-24 h-24 object-contain mb-2" 
               onError={(e) => { (e.target as HTMLImageElement).src = '/logo.jpeg'; }}
             />
-            <p className="text-center font-bold text-lg uppercase">ROTI MANIS ALIF</p>
+            <p className="text-center font-bold text-lg uppercase">ROTI MANIS ARIF</p>
             <p className="text-center text-[10px] leading-tight text-stone-600 max-w-[200px]">{localStorage.getItem('store_address') || ''}</p>
             <p className="text-center text-[10px] text-stone-600">{localStorage.getItem('store_phone') || ''}</p>
           </div>
@@ -476,7 +509,7 @@ export const ReceiptModal = ({ transaction, onClose, onPrint }: { transaction: E
           <p>---------------------------------</p>
           {transaction.items.some(i => i.subtotal >= 0) && (
             <div className="space-y-2">
-              <p className="font-bold mb-1">PENJUALAN</p>
+              <p className="font-bold mb-1">PEMBELIAN</p>
               {transaction.items.filter(i => i.subtotal >= 0).map((item, idx) => {
                 const itemSubtotal = formatRupiah(Math.abs(item.subtotal));
                 return (
@@ -510,6 +543,18 @@ export const ReceiptModal = ({ transaction, onClose, onPrint }: { transaction: E
             </div>
           )}
           <p>---------------------------------</p>
+           {totalSales > 0 && totalReturns > 0 && (
+            <div className="space-y-0.5">
+              <div className="flex justify-between">
+                <span>TOT. PEMBELIAN:</span>
+                <span>Rp {formatRupiah(totalSales)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>TOT. RETUR:</span>
+                <span>-Rp {formatRupiah(totalReturns)}</span>
+              </div>
+            </div>
+          )}
           <div className="flex justify-between font-bold">
             <span>TOTAL:</span>
             <span>Rp {formatRupiah(transaction.total)}</span>
@@ -520,8 +565,8 @@ export const ReceiptModal = ({ transaction, onClose, onPrint }: { transaction: E
           </div>
           {transaction.status === 'belum_lunas' && (
             <div className="flex justify-between text-rose-600 font-bold">
-              <span>SISA:</span>
-              <span>Rp {formatRupiah(transaction.total - (transaction.bayar || 0))}</span>
+              <span>KURANG:</span>
+              <span>- Rp {formatRupiah(transaction.total - (transaction.bayar || 0))}</span>
             </div>
           )}
           {transaction.bayar > transaction.total && (
@@ -530,15 +575,26 @@ export const ReceiptModal = ({ transaction, onClose, onPrint }: { transaction: E
               <span>Rp {formatRupiah(transaction.bayar - transaction.total)}</span>
             </div>
           )}
-          <p className="text-center mt-4">Terima Kasih!</p>
+          <div className="text-center mt-4 text-[10px] text-stone-600 whitespace-pre-line leading-tight">
+            {localStorage.getItem('receipt_footer') || 'Terima Kasih Atas\nKunjungan Anda'}
+          </div>
         </div>
         <div className="p-4 bg-stone-50 border-t flex flex-col gap-2 rounded-b-2xl">
-          <button 
-            onClick={() => onPrint(transaction)} 
-            className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold text-base flex items-center justify-center gap-2 active:scale-95 transition-transform"
-          >
-            <Printer size={16} /> Cetak Nota
-          </button>
+          {!isPrinterReady ? (
+            <button 
+              onClick={onConnect} 
+              className="w-full py-3 bg-amber-500 text-white rounded-xl font-bold text-base flex items-center justify-center gap-2 active:scale-95 transition-transform shadow-md"
+            >
+              <RefreshCw size={16} /> Hubungkan Printer
+            </button>
+          ) : (
+            <button 
+              onClick={() => onPrint(transaction)} 
+              className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold text-base flex items-center justify-center gap-2 active:scale-95 transition-transform"
+            >
+              <Printer size={16} /> Cetak Nota
+            </button>
+          )}
           <button 
             onClick={handleShareImage} 
             className="w-full py-3 bg-green-500 text-white rounded-xl font-bold text-base flex items-center justify-center gap-2 active:scale-95 transition-transform"

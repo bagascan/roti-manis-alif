@@ -15,7 +15,8 @@ export default function ExpensePage() {
     tanggal: new Date(),
     kategori: 'Lainnya',
     keterangan: '',
-    nominal: 0
+    nominal: 0,
+    tipe: 'pengeluaran'
   });
 
   const keteranganInputRef = useRef<HTMLInputElement>(null);
@@ -39,11 +40,11 @@ export default function ExpensePage() {
   const handleSave = async () => {
     try {
       if (editingId) {
-        await db.expenses.update(editingId, formData);
-        showToast('Pengeluaran diperbarui!', 'success');
+        await db.expenses.update(editingId, { ...formData, tipe: formData.tipe || 'pengeluaran' });
+        showToast('Data kas diperbarui!', 'success');
       } else {
-        await db.expenses.add(formData);
-        showToast('Pengeluaran dicatat!', 'success');
+        await db.expenses.add({ ...formData, tipe: formData.tipe || 'pengeluaran' });
+        showToast('Data kas dicatat!', 'success');
       }
       resetForm();
       loadData();
@@ -59,7 +60,7 @@ export default function ExpensePage() {
   };
 
   const resetForm = () => {
-    setFormData({ tanggal: new Date(), kategori: 'Lainnya', keterangan: '', nominal: 0 });
+    setFormData({ tanggal: new Date(), kategori: 'Lainnya', keterangan: '', nominal: 0, tipe: 'pengeluaran' });
     setEditingId(null);
     setShowForm(false);
   };
@@ -93,29 +94,49 @@ export default function ExpensePage() {
         </div>
       )}
 
-      <div className="bg-white p-3 rounded-xl shadow-sm border border-stone-100 mb-4">
-        <p className="text-xs text-stone-400 uppercase font-bold">Total Pengeluaran</p>
-        <p className="text-xl font-bold text-rose-600">Rp {formatRupiah(expenses.reduce((acc, curr) => acc + curr.nominal, 0))}</p>
+      <div className="grid grid-cols-2 gap-2 mb-4">
+        <div className="bg-white p-3 rounded-xl shadow-sm border border-stone-100">
+          <p className="text-[10px] text-stone-400 uppercase font-bold">Total Pengeluaran</p>
+          <p className="text-base font-bold text-rose-600">Rp {formatRupiah(expenses.filter(e => e.tipe !== 'pemasukkan').reduce((acc, curr) => acc + curr.nominal, 0))}</p>
+        </div>
+        <div className="bg-white p-3 rounded-xl shadow-sm border border-stone-100">
+          <p className="text-[10px] text-stone-400 uppercase font-bold">Pemasukkan Lain</p>
+          <p className="text-base font-bold text-blue-600">Rp {formatRupiah(expenses.filter(e => e.tipe === 'pemasukkan').reduce((acc, curr) => acc + curr.nominal, 0))}</p>
+        </div>
       </div>
 
       <button 
         onClick={() => showForm ? resetForm() : setShowForm(true)}
-        className="w-full mb-3 flex items-center justify-center gap-2 py-2.5 bg-red-500 text-white rounded-xl text-base font-bold shadow-md active:scale-95 transition-transform"
+        className="w-full mb-3 flex items-center justify-center gap-2 py-2.5 bg-stone-800 text-white rounded-xl text-base font-bold shadow-md active:scale-95 transition-transform"
       >
-        <Plus size={16} /> {showForm ? 'Batal' : editingId ? 'Batal Edit' : 'Catat Pengeluaran'}
+        <Plus size={16} /> {showForm ? 'Batal' : editingId ? 'Batal Edit' : 'Tambah Arus Kas'}
       </button>
 
       {showForm && (
-        <form onSubmit={e => { e.preventDefault(); setShowConfirmModal({ type: 'save' }); }} className="bg-white p-3 rounded-2xl shadow-md border border-red-100 mb-4 space-y-2 animate-in fade-in slide-in-from-top-4">
+        <form onSubmit={e => { e.preventDefault(); setShowConfirmModal({ type: 'save' }); }} className="bg-white p-3 rounded-2xl shadow-md border border-stone-200 mb-4 space-y-2 animate-in fade-in slide-in-from-top-4">
+          <div>
+            <label className="text-xs font-bold text-stone-500 mb-1.5 block">Tipe Kas</label>
+            <div className="flex gap-2">
+              {(['pengeluaran', 'pemasukkan'] as const).map((t) => (
+                <button
+                  key={t} type="button"
+                  onClick={() => setFormData({...formData, tipe: t})}
+                  className={`flex-1 py-2 rounded-lg text-[10px] font-bold capitalize border-2 transition-all ${formData.tipe === t ? (t === 'pengeluaran' ? 'bg-red-500 border-red-500 text-white' : 'bg-blue-600 border-blue-600 text-white') : 'bg-white border-stone-100 text-stone-400'}`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
           <div>
             <label className="text-xs font-bold text-stone-500 mb-1 block">Kategori</label>
-            <select value={formData.kategori} onChange={e => setFormData({...formData, kategori: e.target.value})} className="w-full p-2.5 bg-stone-100 rounded-lg text-sm outline-none focus:ring-2 ring-red-400">
+            <select value={formData.kategori} onChange={e => setFormData({...formData, kategori: e.target.value})} className="w-full p-2.5 bg-stone-100 rounded-lg text-sm outline-none focus:ring-2 ring-stone-400">
               {categories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
             <label className="text-xs font-bold text-stone-500 mb-1 block">Keterangan</label>
-            <input type="text" ref={keteranganInputRef} required value={formData.keterangan} onChange={e => setFormData({...formData, keterangan: e.target.value})} className="w-full p-2.5 bg-stone-100 rounded-lg text-sm outline-none focus:ring-2 ring-red-400" placeholder="Misal: Bayar listrik Januari" />
+            <input type="text" ref={keteranganInputRef} required value={formData.keterangan} onChange={e => setFormData({...formData, keterangan: e.target.value})} className="w-full p-2.5 bg-stone-100 rounded-lg text-sm outline-none focus:ring-2 ring-stone-400" placeholder="Misal: Bayar listrik Januari" />
           </div>
           <div>
             <label className="text-xs font-bold text-stone-500 mb-1 block">Nominal (Rp)</label>
@@ -123,12 +144,12 @@ export default function ExpensePage() {
               type="text" required 
               value={formatRupiah(formData.nominal)} 
               onChange={e => setFormData({...formData, nominal: parseInt(e.target.value.replace(/\./g, '')) || 0})} 
-              className="w-full p-2.5 bg-stone-100 rounded-lg text-sm outline-none focus:ring-2 ring-red-400" 
+              className="w-full p-2.5 bg-stone-100 rounded-lg text-sm outline-none focus:ring-2 ring-stone-400" 
               inputMode="numeric" 
             />
           </div>
           <button type="submit" className="w-full mt-2 py-2.5 bg-stone-800 text-white rounded-xl text-sm font-bold shadow-md">
-            {editingId ? 'Simpan Perubahan' : 'Simpan Pengeluaran'}
+            {editingId ? 'Simpan Perubahan' : 'Simpan Data'}
           </button>
         </form>
       )}
@@ -141,11 +162,13 @@ export default function ExpensePage() {
 
       <div className="space-y-2 pb-12">
         {expenses.filter(e => e.keterangan.toLowerCase().includes(searchTerm.toLowerCase())).map(e => (
-          <div key={e.id} className="bg-white border border-stone-100 p-3 rounded-xl shadow-sm">
+          <div key={e.id} className={`bg-white border p-3 rounded-xl shadow-sm border-l-4 ${e.tipe === 'pemasukkan' ? 'border-l-blue-500 border-stone-100' : 'border-l-red-500 border-stone-100'}`}>
             <div className="flex justify-between items-start mb-1.5">
               <div>
                 <div className="flex items-center gap-1.5 mb-0.5">
-                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 uppercase">{e.kategori}</span>
+                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase ${e.tipe === 'pemasukkan' ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-600'}`}>
+                    {e.tipe === 'pemasukkan' ? 'PEMASUKKAN' : e.kategori}
+                  </span>
                   <span className="text-[9px] text-stone-400 flex items-center gap-1"><Calendar size={10}/> {new Date(e.tanggal).toLocaleDateString('id-ID')}</span>
                 </div>
                 <h3 className="text-xs font-bold text-stone-800">{e.keterangan}</h3>
@@ -156,7 +179,7 @@ export default function ExpensePage() {
               </div>
             </div>
             <div className="pt-1.5 border-t border-stone-50">
-              <p className="text-base font-bold text-red-600">Rp {formatRupiah(e.nominal)}</p>
+              <p className={`text-base font-bold ${e.tipe === 'pemasukkan' ? 'text-blue-600' : 'text-red-600'}`}>{e.tipe === 'pemasukkan' ? '' : '-'}Rp {formatRupiah(e.nominal)}</p>
             </div>
           </div>
         ))}

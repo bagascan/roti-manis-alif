@@ -1,5 +1,5 @@
 /// <reference types="vite-plugin-pwa/react" />
-import { useState, useEffect, useCallback} from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import { db } from './db'
 import type { EnrichedTransaction } from './views/HistoryPage' // Import type for editing transaction
@@ -15,6 +15,7 @@ import SettingsPage from './views/SettingsPage'
 import LaporanPage from './views/LaporanPage'
 import LaporanReturPage from './views/LaporanReturPage'
 import TransferStokPage from './views/TransferStokPage'
+import { receiptHelper } from './views/receiptHelper'
 import { 
   Package, 
   Users, 
@@ -34,12 +35,100 @@ import {
 } from 'lucide-react'
 import { formatRupiah } from './utils/formatters'
 
+// Bluetooth Interfaces
+interface BluetoothGATTCharacteristic {
+  writeValue(value: BufferSource): Promise<void>;
+}
+interface BluetoothGATTService {
+  getCharacteristic(characteristic: string | number): Promise<BluetoothGATTCharacteristic>;
+}
+interface BluetoothGATTServer {
+  connect(): Promise<BluetoothGATTServer>;
+  getPrimaryService(service: string | number): Promise<BluetoothGATTService>;
+}
+interface BluetoothDevice extends EventTarget {
+  name?: string;
+  gatt?: BluetoothGATTServer;
+}
+interface RequestDeviceOptions {
+  filters?: Array<{ services?: Array<string | number>; name?: string; namePrefix?: string }>;
+  optionalServices?: Array<string | number>;
+  acceptAllDevices?: boolean;
+}
+interface ExtendedNavigator extends Navigator {
+  bluetooth?: {
+    requestDevice(options: RequestDeviceOptions): Promise<BluetoothDevice>;
+  };
+}
+
 type View = 'menu' | 'barang' | 'pelanggan' | 'kasir' | 'riwayat' | 'laporan' | 'restok' | 'penyesuaian' | 'supplier' | 'pengaturan' | 'pengeluaran' | 'laporan-retur' | 'transfer-stok'
+
+// Helper untuk mengubah Logo (Base64/URL) menjadi ESC/POS Bit Image
+const getLogoBytes = async (base64: string): Promise<Uint8Array | null> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const width = 160; // Lebar logo dalam pixel (kelipatan 8, aman untuk 58mm)
+      const height = Math.floor(img.height * (width / img.width));
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { resolve(null); return; }
+      
+      // Gambar dengan background putih (menghindari transparansi jadi hitam)
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(img, 0, 0, width, height);
+      
+      const imageData = ctx.getImageData(0, 0, width, height);
+      const pixels = imageData.data;
+      const bytesWidth = width / 8;
+      const data = new Uint8Array(bytesWidth * height);
+
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < bytesWidth; x++) {
+          let byte = 0;
+          for (let bit = 0; bit < 8; bit++) {
+            const pxIndex = (y * width + (x * 8 + bit)) * 4;
+            const r = pixels[pxIndex];
+            const g = pixels[pxIndex + 1];
+            const b = pixels[pxIndex + 2];
+            const alpha = pixels[pxIndex + 3];
+            const luminance = alpha < 128 ? 255 : (r * 0.299 + g * 0.587 + b * 0.114);
+            if (luminance < 128) byte |= (1 << (7 - bit));
+          }
+          data[y * bytesWidth + x] = byte;
+        }
+      }
+
+      const header = new Uint8Array([
+        0x1B, 0x61, 0x01, // Center Alignment
+        0x1D, 0x76, 0x30, 0x00,
+        bytesWidth & 0xFF, (bytesWidth >> 8) & 0xFF,
+        height & 0xFF, (height >> 8) & 0xFF
+      ]);
+      const res = new Uint8Array(header.length + data.length);
+      res.set(header); res.set(data, header.length);
+      resolve(res);
+    };
+    img.onerror = () => resolve(null);
+    img.src = base64;
+  });
+};
 
 export default function App() {
   const [currentView, setCurrentView] = useState<View>('menu')
   const [todayStats, setTodayStats] = useState({ sales: 0, profit: 0 });
   const [initError, setInitError] = useState<string | null>(null);
+
+  // Global Printer State & Refs
+  const [isPrinterReady, setIsPrinterReady] = useState(false);
+  const [printerAddress, setPrinterAddress] = useState(localStorage.getItem('printer_address') || '');
+  const bluetoothDeviceRef = useRef<BluetoothDevice | null>(null);
+  const gattServerRef = useRef<BluetoothGATTServer | null>(null);
+  const printerCharacteristicRef = useRef<BluetoothGATTCharacteristic | null>(null);
 
   // Mekanisme PWA Update Prompt
   const {
@@ -75,6 +164,100 @@ export default function App() {
     setCurrentView(view);
   };
 
+  const handleSearchBluetooth = async () => {
+    const nav = navigator as ExtendedNavigator;
+    if (!nav.bluetooth) return false;
+
+    const SERVICE_UUID = '000018f0-0000-1000-8000-00805f9b34fb';
+    const CHARACTERISTIC_UUID = '00002af1-0000-1000-8000-00805f9b34fb';
+
+    try {
+      const device = await nav.bluetooth.requestDevice({
+        filters: [{ services: [SERVICE_UUID] }],
+        optionalServices: [SERVICE_UUID]
+      });
+
+      if (device && device.name) {
+        bluetoothDeviceRef.current = device;
+        device.addEventListener('gattserverdisconnected', () => {
+          setIsPrinterReady(false);
+          gattServerRef.current = null;
+          printerCharacteristicRef.current = null;
+        });
+
+        if (!device.gatt) return false;
+        const server = await device.gatt.connect();
+        gattServerRef.current = server;
+        
+        const service = await server.getPrimaryService(SERVICE_UUID);
+        const characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+        
+        printerCharacteristicRef.current = characteristic;
+        setIsPrinterReady(true);
+        setPrinterAddress(device.name);
+        localStorage.setItem('printer_address', device.name);
+        return true;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return false;
+  };
+
+  const printReceipt = async (transaction: EnrichedTransaction) => {
+    if (!printerCharacteristicRef.current) {
+      const success = await handleSearchBluetooth();
+      if (!success) return false;
+    }
+
+    try {
+      const logoBase64 = localStorage.getItem('app_logo') || '/logo.jpeg';
+      const logoBuffer = await getLogoBytes(logoBase64);
+      
+      const text = receiptHelper.generateFullReceipt(transaction);
+      const encoder = new TextEncoder();
+      
+      // Gabungkan Inisialisasi, Logo, dan Teks
+      const init = new Uint8Array([0x1B, 0x40]); // Initialize
+      const alignLeft = new Uint8Array([0x1B, 0x61, 0x00]); // Reset ke rata kiri
+      const data = encoder.encode(text + "\n\n\n\n"); // Add spacing for tear off
+      
+      let totalLength = init.length + alignLeft.length + data.length;
+      if (logoBuffer) totalLength += logoBuffer.length;
+
+      const combined = new Uint8Array(totalLength);
+      combined.set(init);
+      
+      let offset = init.length;
+      if (logoBuffer) {
+        combined.set(logoBuffer, offset);
+        offset += logoBuffer.length;
+      }
+      combined.set(alignLeft, offset);
+      offset += alignLeft.length;
+      combined.set(data, offset);
+
+      // Printer thermal (58mm) memiliki batas MTU yang sempit (biasanya 20 bytes).
+      // Mengirim data besar sekaligus sering menyebabkan error atau printer terputus.
+      // Kita kirim data dalam potongan kecil (chunks).
+      const CHUNK_SIZE = 20;
+      for (let i = 0; i < combined.length; i += CHUNK_SIZE) {
+        const chunk = combined.slice(i, i + CHUNK_SIZE);
+        await printerCharacteristicRef.current!.writeValue(chunk);
+        // Tambahkan delay kecil antar chunk untuk stabilitas printer thermal 58mm
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Print error:', error);
+      setIsPrinterReady(false);
+      gattServerRef.current = null;
+      printerCharacteristicRef.current = null;
+      return false;
+    }
+  };
+
   const fetchTodayData = useCallback(async () => {
     try {
       const today = new Date();
@@ -108,8 +291,11 @@ export default function App() {
         });
       });
 
-      const expensesTotal = exp.reduce((acc, e) => acc + e.nominal, 0);
-      const profit = (sales - returns - cogs) - expensesTotal;
+      // Filter pengeluaran dan pemasukkan lain
+      const expensesTotal = exp.filter(e => e.tipe !== 'pemasukkan').reduce((acc, e) => acc + e.nominal, 0);
+      const otherIncomeTotal = exp.filter(e => e.tipe === 'pemasukkan').reduce((acc, e) => acc + e.nominal, 0);
+      
+      const profit = (sales - returns - cogs) - expensesTotal + otherIncomeTotal;
 
       setTodayStats({ sales, profit });
     } catch (err) {
@@ -129,7 +315,7 @@ export default function App() {
     { id: 'supplier', label: 'Supplier', icon: <Truck size={20} />, color: 'bg-indigo-100 text-indigo-700' },
     { id: 'riwayat', label: 'Riwayat', icon: <History size={20} />, color: 'bg-blue-100 text-blue-700' },
     { id: 'restok', label: 'Restok', icon: <PackagePlus size={20} />, color: 'bg-rose-100 text-rose-700' },
-    { id: 'pengeluaran', label: 'Pengeluaran', icon: <Wallet size={20} />, color: 'bg-red-100 text-red-700' },
+    { id: 'pengeluaran', label: 'Kas Operasional', icon: <Wallet size={20} />, color: 'bg-red-100 text-red-700' },
     { id: 'penyesuaian', label: 'Stok Opname', icon: <Settings2 size={20} />, color: 'bg-slate-100 text-stone-700' },
     { id: 'pengaturan', label: 'Pengaturan', icon: <Settings size={20} />, color: 'bg-stone-200 text-stone-700' },
     { id: 'laporan-retur', label: 'Laporan Retur', icon: <RotateCcw size={20} />, color: 'bg-indigo-100 text-indigo-700' }, // New menu item
@@ -169,7 +355,9 @@ export default function App() {
           >
             <ChevronLeft size={20} />
           </button>
-          <h1 className="text-base font-bold capitalize">{currentView.replace('-', ' ')}</h1>
+        <h1 className="text-base font-bold capitalize">
+          {currentView === 'pengeluaran' ? 'Kas Operasional' : currentView.replace('-', ' ')}
+        </h1>
         </header>
         {currentView === 'barang' ? <ProductPage /> :
          currentView === 'supplier' ? <SupplierPage /> :
@@ -177,6 +365,9 @@ export default function App() {
          currentView === 'restok' ? <RestockPage /> :
          currentView === 'riwayat' ? (
            <HistoryPage 
+             isPrinterReady={isPrinterReady}
+             onPrint={printReceipt}
+             onSearchBluetooth={handleSearchBluetooth}
              onEditTransaction={(transaction) => {
                setEditingTransactionForKasir(transaction);
                navigateTo('kasir');
@@ -185,16 +376,29 @@ export default function App() {
          ) :
          currentView === 'penyesuaian' ? <PenyesuaianPage /> :
          currentView === 'pengeluaran' ? <ExpensePage /> :
-         currentView === 'pengaturan' ? <SettingsPage /> :
+         currentView === 'pengaturan' ? (
+           <SettingsPage 
+              isPrinterReady={isPrinterReady} 
+              printerAddress={printerAddress} 
+              onSearchBluetooth={handleSearchBluetooth}
+              printerCharacteristic={printerCharacteristicRef.current}
+           />
+         ) :
          currentView === 'laporan-retur' ? <LaporanReturPage /> :
          currentView === 'laporan' ? <LaporanPage /> : 
          currentView === 'transfer-stok' ? <TransferStokPage /> : 
          currentView === 'kasir' ? (
              <KasirPage 
                editData={editingTransactionForKasir} 
+               isPrinterReady={isPrinterReady}
+               onSearchBluetooth={handleSearchBluetooth}
+               onPrint={printReceipt}
                onFinished={() => {
+                 const wasEditing = editingTransactionForKasir !== null;
                  setEditingTransactionForKasir(null);
-                 window.history.back();
+                 // Jika sedang edit transaksi lama, balik ke riwayat. 
+                 // Jika transaksi baru, tetap di Kasir untuk transaksi berikutnya.
+                 if (wasEditing) window.history.back();
                }} 
              />
            ) : null}
@@ -226,10 +430,10 @@ export default function App() {
           <img src={localStorage.getItem('app_logo') || '/logo.jpeg'} alt="Logo" className="w-16 h-16 rounded-2xl object-cover border-2 border-white/50 shadow-lg" />
           <div>
             <p className="text-orange-100 text-xs font-medium tracking-widest uppercase">Selamat Datang</p>
-            <h1 className="text-2xl font-extrabold mt-0.5 uppercase">ROTI MANIS ALIF</h1>
+            <h1 className="text-2xl font-extrabold mt-0.5 uppercase">ROTI MANIS ARIF</h1>
             <div className="mt-2 text-[11px] text-orange-50 font-medium leading-tight">
               <p className="mb-0.5">Laporan Hari Ini</p>
-              <p>Total Penjualan : Rp {formatRupiah(todayStats.sales)}</p>
+              <p>Total Pembelian : Rp {formatRupiah(todayStats.sales)}</p>
               <p>Total Laba Bersih : Rp {formatRupiah(todayStats.profit)}</p>
             </div>
           </div>
@@ -255,7 +459,7 @@ export default function App() {
       </main>
 
       <footer className="mt-6 pb-4 text-center text-stone-400 text-xs">
-        &copy; 2026 Roti Manis Alif • Mobile POS
+        &copy; 2026 Roti Manis Arif • Mobile POS
       </footer>
     </div>
   )

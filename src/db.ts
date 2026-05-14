@@ -25,6 +25,7 @@ export interface Supplier {
 export interface Customer {
   id?: number;
   nama: string;
+  maps: string;
   telepon: string;
   status: 'aktif' | 'nonaktif';
   hutang: number;
@@ -56,6 +57,7 @@ export interface Expense {
   kategori: string;
   keterangan: string;
   nominal: number;
+  tipe: 'pemasukkan' | 'pengeluaran';
 }
 
 export interface Adjustment {
@@ -80,12 +82,12 @@ export class AlifDatabase extends Dexie {
 
   constructor() {
     super('AlifBakeryDB');
-    this.version(17).stores({
+    this.version(19).stores({
       products: '++id, nama, kategori, supplierId, status',
       customers: '++id, nama, telepon, status, hutang',
       suppliers: '++id, nama, telepon, status',
       restocks: '++id, tanggal, supplierId',
-      expenses: '++id, tanggal, kategori',
+      expenses: '++id, tanggal, kategori, tipe',
       adjustments: '++id, tanggal, productId',
       transactions: '++id, tanggal, customerId, tipe, status',
     });
