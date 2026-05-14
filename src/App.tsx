@@ -135,14 +135,27 @@ export default function App() {
     needRefresh: [needRefresh],
     updateServiceWorker
   } = useRegisterSW({
-    onRegistered(r) {
-      // Cek update setiap 1 jam
-      if (r) {
-        setInterval(() => {
+    onRegisteredSW(_swUrl, r) {
+      if (!r) return;
+
+      // 1. Cek update segera setelah registrasi selesai
+      r.update();
+
+      // 2. Cek update setiap kali aplikasi kembali aktif (misal setelah pindah app atau HP nyala)
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
           r.update();
-        }, 60 * 60 * 1000);
-      }
+        }
+      });
+
+      // 3. Cek berkala setiap 1 jam
+      setInterval(() => {
+        r.update();
+      }, 60 * 60 * 1000);
     },
+    onRegisterError(error) {
+      console.error('SW registration error', error);
+    }
   });
 
   const [editingTransactionForKasir, setEditingTransactionForKasir] = useState<EnrichedTransaction | null>(null);
