@@ -325,7 +325,7 @@ export default function App() {
   }
 
   const menuItems = [
-    { id: 'kasir', label: 'Kasir', icon: <ShoppingCart size={70} />, color: 'bg-green-100 text-green-700' },
+    { id: 'kasir', label: 'Kasir', icon: <ShoppingCart size={20} />, color: 'bg-green-100 text-green-700' },
     { id: 'barang', label: 'Barang', icon: <Package size={20} />, color: 'bg-amber-100 text-amber-700' },
     { id: 'pelanggan', label: 'Pelanggan', icon: <Users size={20} />, color: 'bg-orange-100 text-orange-700' },
     { id: 'supplier', label: 'Supplier', icon: <Truck size={20} />, color: 'bg-indigo-100 text-indigo-700' },
