@@ -257,9 +257,34 @@ export default function App() {
     
     if (isConnectingRef.current && !force) return;
 
-    // Coba gunakan kembali device yang sudah ada di memory jika tersedia
+    const nav = navigator as ExtendedNavigator;
+
+    // 1. Jika device masih ada di memori (pindah-pindah menu tanpa refresh)
     if (bluetoothDeviceRef.current && !force) {
       await attemptConnection(bluetoothDeviceRef.current);
+      return;
+    }
+
+    // 2. Jika device hilang dari memori (setelah aplikasi ditutup/restart)
+    // Kita gunakan getDevices untuk mengambil kembali izin yang sudah pernah diberikan.
+    if (nav.bluetooth?.getDevices) {
+      isConnectingRef.current = true;
+      setIsConnecting(true);
+      try {
+        const devices = await nav.bluetooth.getDevices();
+        const savedId = localStorage.getItem('printer_id');
+        const printer = devices.find(d => d.id === savedId) || devices[0];
+        
+        if (printer) {
+          bluetoothDeviceRef.current = printer;
+          await attemptConnection(printer);
+        }
+      } catch (e) {
+        console.error("Auto-connect error:", e);
+      } finally {
+        isConnectingRef.current = false;
+        setIsConnecting(false);
+      }
     }
   }, [isPrinterReady, attemptConnection]);
 
