@@ -403,10 +403,15 @@ export default function App() {
     };
   }, [handleAutoConnect, isPrinterReady]);
 
-  // Fetch data harian khusus untuk menu utama
+  // Fetch data harian & Auto Connect saat navigasi menu
   useEffect(() => {
-    if (currentView === 'menu') fetchTodayData();
-  }, [currentView, fetchTodayData]);
+    if (currentView === 'menu') {
+      fetchTodayData();
+      handleAutoConnect(); // Pastikan mencari printer saat di menu utama
+    } else if (currentView === 'kasir') {
+      handleAutoConnect(); // Cari otomatis khusus saat masuk menu kasir
+    }
+  }, [currentView, fetchTodayData, handleAutoConnect]);
 
   if (initError) {
     return (
