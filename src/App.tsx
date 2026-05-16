@@ -128,7 +128,6 @@ export default function App() {
   const [currentView, setCurrentView] = useState<View>('menu')
   const [todayStats, setTodayStats] = useState({ sales: 0, profit: 0 });
   const [initError, setInitError] = useState<string | null>(null);
-  const [debugMsg, setDebugMsg] = useState<string | null>(null);
   
   // Sinkronisasi status printer ke Ref untuk menghindari re-trigger pada useEffect
   const isPrinterReadyRef = useRef(false);
@@ -136,13 +135,6 @@ export default function App() {
   useEffect(() => { isPrinterReadyRef.current = isPrinterReady; }, [isPrinterReady]);
 
   const [editingTransactionForKasir, setEditingTransactionForKasir] = useState<EnrichedTransaction | null>(null);
-
-  const logDebug = useCallback((msg: string) => {
-    console.log(`[PRINTER DEBUG] ${msg}`);
-    setDebugMsg(msg);
-    // Hilangkan pesan setelah 3 detik
-    setTimeout(() => setDebugMsg(prev => prev === msg ? null : prev), 3000);
-  }, []);
 
     const navigateTo = (view: View) => {
     window.history.pushState({ view }, '');
@@ -169,7 +161,6 @@ export default function App() {
   const printerCharacteristicRef = useRef<BluetoothGATTCharacteristic | null>(null);
    const attemptConnection = useCallback(async (device: BluetoothDevice) => {
     setIsConnecting(true);
-      logDebug(`Menghubungkan ke: ${device.name || 'Printer'}`);
 
     const SERVICE_UUID = '000018f0-0000-1000-8000-00805f9b34fb';
     const CHARACTERISTIC_UUID = '00002af1-0000-1000-8000-00805f9b34fb';
@@ -177,16 +168,13 @@ export default function App() {
     try {
       if (!device.gatt) throw new Error('GATT not available');
       const server = device.gatt.connected ? device.gatt : await device.gatt.connect();
-      logDebug("GATT Server terhubung");
       
       gattServerRef.current = server;
       const service = await server.getPrimaryService(SERVICE_UUID);
-      logDebug("Service ditemukan");
       
       const characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
       printerCharacteristicRef.current = characteristic;
       setIsPrinterReady(true);
-      logDebug("Printer SIAP!");
 
       if (device.name) {
         setPrinterAddress(device.name);
@@ -203,13 +191,12 @@ export default function App() {
 
       return true;
     } catch {
-       logDebug("Gagal jabat tangan Bluetooth");
       setIsPrinterReady(false);
       return false;
     } finally {
       setIsConnecting(false);
     }
-  }, [logDebug]);
+  }, []);
   // Mekanisme PWA Update Prompt
   const {
     needRefresh: [needRefresh],
@@ -270,16 +257,11 @@ export default function App() {
     
     if (isConnectingRef.current && !force) return;
 
-    logDebug("Mengecek koneksi printer...");
-
     // Coba gunakan kembali device yang sudah ada di memory jika tersedia
     if (bluetoothDeviceRef.current && !force) {
-      logDebug("Printer ditemukan di sesi ini, menyambung...");
       await attemptConnection(bluetoothDeviceRef.current);
-    } else {
-      logDebug("Printer belum dihubungkan manual di sesi ini.");
     }
-  }, [isPrinterReady, attemptConnection, logDebug]);
+  }, [isPrinterReady, attemptConnection]);
 
   const printReceipt = async (transaction: EnrichedTransaction) => {
     if (!printerCharacteristicRef.current) {
@@ -381,14 +363,7 @@ export default function App() {
     }
   }, []);
 
-  // 1. Effect untuk Log Masuk Menu (Hanya dipicu saat ganti menu)
-  useEffect(() => {
-    if (currentView === 'kasir') {
-      logDebug("Berhasil masuk menu kasir");
-    }
-  }, [currentView, logDebug]);
-
-  // 2. Effect untuk Logika Data & Auto Connect
+  // Effect untuk Logika Data & Auto Connect
   useEffect(() => {
     let cashierInterval: number | undefined;
 
@@ -530,13 +505,6 @@ export default function App() {
             <p className="text-sm font-bold leading-none mb-1">Versi Baru Tersedia!</p>
             <p className="text-[10px] text-stone-400 font-medium">Klik di sini untuk update aplikasi</p>
           </div>
-        </div>
-      )}
-
-      {/* Debug Toast Overlay */}
-      {debugMsg && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[300] bg-stone-900/90 text-white text-[10px] font-mono px-4 py-2 rounded-full shadow-2xl backdrop-blur-sm border border-white/10 pointer-events-none animate-in fade-in slide-in-from-top">
-          {debugMsg}
         </div>
       )}
 
