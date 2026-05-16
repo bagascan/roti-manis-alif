@@ -58,6 +58,7 @@ interface RequestDeviceOptions {
 interface ExtendedNavigator extends Navigator {
   bluetooth?: {
     requestDevice(options: RequestDeviceOptions): Promise<BluetoothDevice>;
+    getDevices?(): Promise<BluetoothDevice[]>;
   };
 }
 
@@ -177,7 +178,7 @@ export default function App() {
     setCurrentView(view);
   };
 
-  const handleSearchBluetooth = async () => {
+  const attemptConnection = useCallback(async (device: BluetoothDevice) => {
     const nav = navigator as ExtendedNavigator;
     if (!nav.bluetooth) return false;
 
@@ -185,37 +186,78 @@ export default function App() {
     const CHARACTERISTIC_UUID = '00002af1-0000-1000-8000-00805f9b34fb';
 
     try {
+      if (!device.gatt) return false;
+      const server = await device.gatt.connect();
+      gattServerRef.current = server;
+      
+      const service = await server.getPrimaryService(SERVICE_UUID);
+      const characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+      
+      printerCharacteristicRef.current = characteristic;
+      setIsPrinterReady(true);
+      if (device.name) {
+        setPrinterAddress(device.name);
+        localStorage.setItem('printer_address', device.name);
+      }
+
+      device.addEventListener('gattserverdisconnected', () => {
+        setIsPrinterReady(false);
+        gattServerRef.current = null;
+        printerCharacteristicRef.current = null;
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const handleSearchBluetooth = async () => {
+    const nav = navigator as ExtendedNavigator;
+    if (!nav.bluetooth) return false;
+
+    const SERVICE_UUID = '000018f0-0000-1000-8000-00805f9b34fb';
+
+    try {
       const device = await nav.bluetooth.requestDevice({
+        
         filters: [{ services: [SERVICE_UUID] }],
         optionalServices: [SERVICE_UUID]
       });
-
-      if (device && device.name) {
+      if (device) {
         bluetoothDeviceRef.current = device;
-        device.addEventListener('gattserverdisconnected', () => {
-          setIsPrinterReady(false);
-          gattServerRef.current = null;
-          printerCharacteristicRef.current = null;
-        });
-
-        if (!device.gatt) return false;
-        const server = await device.gatt.connect();
-        gattServerRef.current = server;
-        
-        const service = await server.getPrimaryService(SERVICE_UUID);
-        const characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
-        
-        printerCharacteristicRef.current = characteristic;
-        setIsPrinterReady(true);
-        setPrinterAddress(device.name);
-        localStorage.setItem('printer_address', device.name);
-        return true;
+        return await attemptConnection(device);
       }
     } catch (e) {
       console.error(e);
     }
     return false;
   };
+
+  const handleAutoConnect = useCallback(async () => {
+    if (isPrinterReady) return;
+    
+    // Coba hubungkan kembali jika sudah ada referensi device di memory
+    if (bluetoothDeviceRef.current) {
+      await attemptConnection(bluetoothDeviceRef.current);
+      return;
+    }
+
+    // Coba ambil list device yang sudah pernah dipairing (Chrome support)
+    const nav = navigator as ExtendedNavigator;
+    if (nav.bluetooth?.getDevices) {
+      try {
+        const devices = await nav.bluetooth.getDevices();
+        const savedName = localStorage.getItem('printer_address');
+        const printer = devices.find((d: BluetoothDevice) => d.name === savedName) || devices[0];
+        if (printer) {
+          bluetoothDeviceRef.current = printer;
+          await attemptConnection(printer);
+        }
+      } catch {
+        // Gagal secara senyap sesuai permintaan
+      }
+    }
+  }, [isPrinterReady, attemptConnection]);
 
   const printReceipt = async (transaction: EnrichedTransaction) => {
     if (!printerCharacteristicRef.current) {
@@ -321,6 +363,10 @@ export default function App() {
     if (currentView === 'menu') fetchTodayData();
   }, [currentView, fetchTodayData]);
 
+  useEffect(() => {
+    if (currentView === 'kasir') handleAutoConnect();
+  }, [currentView, handleAutoConnect]);
+
   if (initError) {
     return (
       <div className="min-h-screen bg-stone-50 flex flex-col items-center justify-center p-6 text-center">
@@ -386,9 +432,25 @@ export default function App() {
       ) : (
         <>
           {/* Render Halaman Fitur */}
-          <header className="p-4 bg-white border-b flex items-center gap-4">
-            <button onClick={() => window.history.length > 1 ? window.history.back() : navigateTo('menu')} className="p-2 hover:bg-stone-100 rounded-full transition-colors"><ChevronLeft size={20} /></button>
-            <h1 className="text-base font-bold capitalize">{currentView.replace('-', ' ')}</h1>
+          <header className="p-4 bg-white border-b flex items-center justify-between sticky top-0 z-10">
+            <div className="flex items-center gap-4">
+              <button onClick={() => window.history.length > 1 ? window.history.back() : navigateTo('menu')} className="p-2 hover:bg-stone-100 rounded-full transition-colors"><ChevronLeft size={20} /></button>
+              <h1 className="text-base font-bold capitalize">{currentView.replace('-', ' ')}</h1>
+            </div>
+
+            {currentView === 'kasir' && (
+              <div className="flex items-center gap-2">
+                <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold transition-colors ${isPrinterReady ? 'bg-green-100 text-green-700' : 'bg-stone-100 text-stone-500'}`}>
+                  <div className={`w-1.5 h-1.5 rounded-full ${isPrinterReady ? 'bg-green-500 animate-pulse' : 'bg-stone-400'}`} />
+                  {isPrinterReady ? printerAddress : 'Printer Offline'}
+                </div>
+                {!isPrinterReady && (
+                  <button onClick={handleSearchBluetooth} className="p-1.5 bg-stone-100 text-stone-600 rounded-lg active:scale-95 transition-transform" title="Hubungkan Printer">
+                    <RefreshCw size={14} />
+                  </button>
+                )}
+              </div>
+            )}
           </header>
           {currentView === 'barang' && <ProductPage />}
           {currentView === 'supplier' && <SupplierPage />}
