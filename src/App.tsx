@@ -270,49 +270,14 @@ export default function App() {
     
     if (isConnectingRef.current && !force) return;
 
-    const nav = navigator as ExtendedNavigator;
-    if (!nav.bluetooth?.getDevices) {
-      console.warn("API getDevices tidak tersedia di browser ini.");
-      return;
-    }
+    logDebug("Mengecek koneksi printer...");
 
     // Coba gunakan kembali device yang sudah ada di memory jika tersedia
     if (bluetoothDeviceRef.current && !force) {
-      logDebug("Menggunakan referensi printer di memori...");
+      logDebug("Printer ditemukan di sesi ini, menyambung...");
       await attemptConnection(bluetoothDeviceRef.current);
-      return;
-    }
-
-    isConnectingRef.current = true;
-    setIsConnecting(true);
-    logDebug("Mencari daftar perangkat diizinkan...");
-
-    try {
-      const devices = await nav.bluetooth.getDevices();
-      logDebug(`Ditemukan ${devices.length} perangkat terdaftar`);
-      
-      if (devices.length > 0) {
-        const savedName = localStorage.getItem('printer_address');
-        const savedId = localStorage.getItem('printer_id');
-        
-        // Prioritaskan pencarian berdasarkan ID, lalu Nama, atau ambil yang pertama
-        const printer = devices.find((d: BluetoothDevice) => d.id === savedId) || 
-                        devices.find((d: BluetoothDevice) => d.name === savedName) || 
-                        devices[0];
-        
-        if (printer) {
-          logDebug(`Printer cocok ditemukan: ${printer.name}`);
-          bluetoothDeviceRef.current = printer;
-          await attemptConnection(printer);
-        } else {
-          logDebug("Tidak ada printer yang cocok di daftar");
-        }
-      }
-    } catch (e) {
-      console.error("Auto-connect failed:", e);
-    } finally {
-      isConnectingRef.current = false;
-      setIsConnecting(false);
+    } else {
+      logDebug("Printer belum dihubungkan manual di sesi ini.");
     }
   }, [isPrinterReady, attemptConnection, logDebug]);
 
@@ -419,7 +384,7 @@ export default function App() {
   // 1. Effect untuk Log Masuk Menu (Hanya dipicu saat ganti menu)
   useEffect(() => {
     if (currentView === 'kasir') {
-      logDebug("Membuka Menu Kasir...");
+      logDebug("Berhasil masuk menu kasir");
     }
   }, [currentView, logDebug]);
 
