@@ -43,6 +43,7 @@ interface BluetoothGATTService {
   getCharacteristic(characteristic: string | number): Promise<BluetoothGATTCharacteristic>;
 }
 interface BluetoothGATTServer {
+  connected: boolean;
   connect(): Promise<BluetoothGATTServer>;
   getPrimaryService(service: string | number): Promise<BluetoothGATTService>;
 }
@@ -160,6 +161,7 @@ export default function App() {
   });
 
   const [editingTransactionForKasir, setEditingTransactionForKasir] = useState<EnrichedTransaction | null>(null);
+   const isConnectingRef = useRef(false);
 
   // Handle Navigation (Back Button HP & Browser)
   useEffect(() => {
@@ -179,15 +181,20 @@ export default function App() {
   };
 
   const attemptConnection = useCallback(async (device: BluetoothDevice) => {
-    const nav = navigator as ExtendedNavigator;
-    if (!nav.bluetooth) return false;
+      if (isConnectingRef.current) return false;
+    isConnectingRef.current = true;
+
 
     const SERVICE_UUID = '000018f0-0000-1000-8000-00805f9b34fb';
     const CHARACTERISTIC_UUID = '00002af1-0000-1000-8000-00805f9b34fb';
 
     try {
-      if (!device.gatt) return false;
-      const server = await device.gatt.connect();
+       if (!device.gatt) throw new Error('GATT not available');
+      
+      // Gunakan koneksi yang sudah ada jika tersedia, jika tidak buat baru
+      const server = device.gatt.connected 
+        ? device.gatt 
+        : await device.gatt.connect();
       gattServerRef.current = server;
       
       const service = await server.getPrimaryService(SERVICE_UUID);
@@ -207,7 +214,10 @@ export default function App() {
       });
       return true;
     } catch {
+      setIsPrinterReady(false);
       return false;
+    } finally {
+      isConnectingRef.current = false;
     }
   }, []);
 
@@ -233,28 +243,26 @@ export default function App() {
     return false;
   };
 
-  const handleAutoConnect = useCallback(async () => {
-    if (isPrinterReady) return;
-    
-    // Coba hubungkan kembali jika sudah ada referensi device di memory
-    if (bluetoothDeviceRef.current) {
-      await attemptConnection(bluetoothDeviceRef.current);
-      return;
-    }
+  const handleAutoConnect = useCallback(async (force = false) => {
+    if ((isPrinterReady || isConnectingRef.current) && !force) return;
 
-    // Coba ambil list device yang sudah pernah dipairing (Chrome support)
+    // 1. Ambil list device yang sudah pernah di-pairing sebelumnya dari browser
     const nav = navigator as ExtendedNavigator;
     if (nav.bluetooth?.getDevices) {
       try {
         const devices = await nav.bluetooth.getDevices();
-        const savedName = localStorage.getItem('printer_address');
-        const printer = devices.find((d: BluetoothDevice) => d.name === savedName) || devices[0];
-        if (printer) {
-          bluetoothDeviceRef.current = printer;
-          await attemptConnection(printer);
+        if (devices.length > 0) {
+          const savedName = localStorage.getItem('printer_address');
+          // Cari printer berdasarkan nama yang tersimpan, atau ambil yang pertama jika tidak ada
+          const printer = devices.find((d: BluetoothDevice) => d.name === savedName) || devices[0];
+          
+          if (printer) {
+            bluetoothDeviceRef.current = printer;
+            await attemptConnection(printer);
+          }
         }
       } catch {
-        // Gagal secara senyap sesuai permintaan
+        console.log("Auto-connect silent failure (normal after refresh)");
       }
     }
   }, [isPrinterReady, attemptConnection]);
@@ -359,13 +367,19 @@ export default function App() {
     }
   }, []);
 
+  // Jalankan auto-connect sekali saat aplikasi pertama kali di-load (setelah refresh)
   useEffect(() => {
-    if (currentView === 'menu') fetchTodayData();
-  }, [currentView, fetchTodayData]);
+    handleAutoConnect();
+  }, [handleAutoConnect]);
 
+  // Jalankan data fetching & auto-connect tambahan saat berpindah menu
   useEffect(() => {
-    if (currentView === 'kasir') handleAutoConnect();
-  }, [currentView, handleAutoConnect]);
+    if (currentView === 'menu') {
+      fetchTodayData();
+    } else if (currentView === 'kasir') {
+      handleAutoConnect();
+    }
+  }, [currentView, fetchTodayData, handleAutoConnect]);
 
   if (initError) {
     return (
