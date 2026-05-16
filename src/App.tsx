@@ -130,6 +130,7 @@ export default function App() {
 
   // Global Printer State & Refs
   const [isPrinterReady, setIsPrinterReady] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
   const [printerAddress, setPrinterAddress] = useState(localStorage.getItem('printer_address') || '');
   const bluetoothDeviceRef = useRef<BluetoothDevice | null>(null);
   const gattServerRef = useRef<BluetoothGATTServer | null>(null);
@@ -186,6 +187,7 @@ export default function App() {
   const attemptConnection = useCallback(async (device: BluetoothDevice) => {
       if (isConnectingRef.current) return false;
     isConnectingRef.current = true;
+    setIsConnecting(true);
 
 
     const SERVICE_UUID = '000018f0-0000-1000-8000-00805f9b34fb';
@@ -221,6 +223,7 @@ export default function App() {
       return false;
     } finally {
       isConnectingRef.current = false;
+      setIsConnecting(false);
     }
   }, []);
 
@@ -405,13 +408,26 @@ export default function App() {
 
   // Fetch data harian & Auto Connect saat navigasi menu
   useEffect(() => {
+    let cashierInterval: number | undefined;
+
     if (currentView === 'menu') {
       fetchTodayData();
       handleAutoConnect(); // Pastikan mencari printer saat di menu utama
     } else if (currentView === 'kasir') {
       handleAutoConnect(); // Cari otomatis khusus saat masuk menu kasir
+      
+      // Lakukan percobaan ulang setiap 5 detik jika belum terhubung saat di menu kasir
+      cashierInterval = window.setInterval(() => {
+        if (!isPrinterReady && !isConnectingRef.current) {
+          handleAutoConnect();
+        }
+      }, 5000);
     }
-  }, [currentView, fetchTodayData, handleAutoConnect]);
+
+    return () => {
+      if (cashierInterval) clearInterval(cashierInterval);
+    };
+  }, [currentView, fetchTodayData, handleAutoConnect, isPrinterReady]);
 
   if (initError) {
     return (
@@ -492,7 +508,7 @@ export default function App() {
                 </div>
                 {!isPrinterReady && (
                   <button onClick={handleSearchBluetooth} className="p-1.5 bg-stone-100 text-stone-600 rounded-lg active:scale-95 transition-transform" title="Hubungkan Printer">
-                    <RefreshCw size={14} />
+                    <RefreshCw size={14} className={isConnecting ? 'animate-spin' : ''} />
                   </button>
                 )}
               </div>
