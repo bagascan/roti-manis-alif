@@ -56,11 +56,14 @@ interface RequestDeviceOptions {
   optionalServices?: Array<string | number>;
   acceptAllDevices?: boolean;
 }
+
+interface Bluetooth extends EventTarget {
+  requestDevice(options: RequestDeviceOptions): Promise<BluetoothDevice>;
+  getDevices?(): Promise<BluetoothDevice[]>;
+}
+
 interface ExtendedNavigator extends Navigator {
-  bluetooth?: {
-    requestDevice(options: RequestDeviceOptions): Promise<BluetoothDevice>;
-    getDevices?(): Promise<BluetoothDevice[]>;
-  };
+  bluetooth?: Bluetooth;
 }
 
 type View = 'menu' | 'barang' | 'pelanggan' | 'kasir' | 'riwayat' | 'laporan' | 'restok' | 'penyesuaian' | 'supplier' | 'pengaturan' | 'pengeluaran' | 'laporan-retur' | 'transfer-stok'
@@ -367,19 +370,43 @@ export default function App() {
     }
   }, []);
 
-  // Jalankan auto-connect sekali saat aplikasi pertama kali di-load (setelah refresh)
+  // Logic Auto-Connect Global & Pemantauan Latar Belakang
   useEffect(() => {
+    const nav = navigator as ExtendedNavigator;
+    
+    // 1. Percobaan koneksi saat aplikasi dimuat/refresh
     handleAutoConnect();
-  }, [handleAutoConnect]);
 
-  // Jalankan data fetching & auto-connect tambahan saat berpindah menu
-  useEffect(() => {
-    if (currentView === 'menu') {
-      fetchTodayData();
-    } else if (currentView === 'kasir') {
-      handleAutoConnect();
+    // 2. Listener jika status Bluetooth di perangkat berubah (hanya di browser pendukung seperti Chrome)
+    // Ini akan memicu koneksi otomatis jika user baru saja menyalakan Bluetooth HP-nya
+    const onAvailabilityChanged = (event: Event) => {
+      // BluetoothAvailabilityEvent memiliki properti 'value' boolean
+      const e = event as Event & { value?: boolean };
+      if (e.value === true) handleAutoConnect(true);
+    };
+
+    if (nav.bluetooth?.addEventListener) {
+      nav.bluetooth.addEventListener('availabilitychanged', onAvailabilityChanged);
     }
-  }, [currentView, fetchTodayData, handleAutoConnect]);
+
+    // 3. Polling berkala setiap 30 detik untuk memastikan printer tetap terhubung
+    // atau mencoba menyambung kembali jika printer sempat mati lalu nyala lagi
+    const autoRetryTimer = setInterval(() => {
+      if (!isPrinterReady) handleAutoConnect();
+    }, 30000);
+
+    return () => {
+      if (nav.bluetooth?.removeEventListener) {
+        nav.bluetooth.removeEventListener('availabilitychanged', onAvailabilityChanged);
+      }
+      clearInterval(autoRetryTimer);
+    };
+  }, [handleAutoConnect, isPrinterReady]);
+
+  // Fetch data harian khusus untuk menu utama
+  useEffect(() => {
+    if (currentView === 'menu') fetchTodayData();
+  }, [currentView, fetchTodayData]);
 
   if (initError) {
     return (
