@@ -129,6 +129,12 @@ export default function App() {
   const [todayStats, setTodayStats] = useState({ sales: 0, profit: 0 });
   const [initError, setInitError] = useState<string | null>(null);
   const [debugMsg, setDebugMsg] = useState<string | null>(null);
+  
+  // Sinkronisasi status printer ke Ref untuk menghindari re-trigger pada useEffect
+  const isPrinterReadyRef = useRef(false);
+  const [isPrinterReady, setIsPrinterReady] = useState(false);
+  useEffect(() => { isPrinterReadyRef.current = isPrinterReady; }, [isPrinterReady]);
+
   const [editingTransactionForKasir, setEditingTransactionForKasir] = useState<EnrichedTransaction | null>(null);
 
   const logDebug = useCallback((msg: string) => {
@@ -155,7 +161,6 @@ export default function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
   // Global Printer State & Refs
-  const [isPrinterReady, setIsPrinterReady] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [printerAddress, setPrinterAddress] = useState(localStorage.getItem('printer_address') || '');
    const isConnectingRef = useRef(false);
@@ -267,7 +272,7 @@ export default function App() {
 
     const nav = navigator as ExtendedNavigator;
     if (!nav.bluetooth?.getDevices) {
-      logDebug("Browser tidak mendukung getDevices");
+      console.warn("API getDevices tidak tersedia di browser ini.");
       return;
     }
 
@@ -411,20 +416,27 @@ export default function App() {
     }
   }, []);
 
-  // Fetch data harian & Auto Connect saat navigasi menu
+  // 1. Effect untuk Log Masuk Menu (Hanya dipicu saat ganti menu)
+  useEffect(() => {
+    if (currentView === 'kasir') {
+      logDebug("Membuka Menu Kasir...");
+    }
+  }, [currentView, logDebug]);
+
+  // 2. Effect untuk Logika Data & Auto Connect
   useEffect(() => {
     let cashierInterval: number | undefined;
 
     if (currentView === 'menu') {
       fetchTodayData();
     } else if (currentView === 'kasir') {
-      logDebug("Berhasil masuk menu kasir");
       // Hanya jalankan auto-connect saat masuk menu kasir
       handleAutoConnect();
 
       // Jalankan auto-connect berkala khusus saat di menu kasir jika printer belum siap (Auto Konek)
       cashierInterval = window.setInterval(() => {
-        if (!isPrinterReady && !isConnectingRef.current) {
+        // Gunakan Ref agar interval tidak ter-reset setiap kali status printer berubah
+        if (!isPrinterReadyRef.current && !isConnectingRef.current) {
           handleAutoConnect();
         }
       }, 5000); // Mencoba menyambung setiap 5 detik
@@ -433,7 +445,7 @@ export default function App() {
     return () => {
       if (cashierInterval) clearInterval(cashierInterval);
     };
-  }, [currentView, fetchTodayData, handleAutoConnect, isPrinterReady, logDebug]);
+  }, [currentView, fetchTodayData, handleAutoConnect]); // isPrinterReady dihapus dari sini agar tidak loop
 
   if (initError) {
     return (
