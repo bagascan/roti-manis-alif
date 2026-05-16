@@ -127,15 +127,67 @@ export default function App() {
   const [currentView, setCurrentView] = useState<View>('menu')
   const [todayStats, setTodayStats] = useState({ sales: 0, profit: 0 });
   const [initError, setInitError] = useState<string | null>(null);
+  const [debugMsg, setDebugMsg] = useState<string | null>(null);
+ const [editingTransactionForKasir, setEditingTransactionForKasir] = useState<EnrichedTransaction | null>(null);
 
+  const logDebug = useCallback((msg: string) => {
+    console.log(`[PRINTER DEBUG] ${msg}`);
+    setDebugMsg(msg);
+    setTimeout(() => setDebugMsg(prev => prev === msg ? null : prev), 3000);
+  }, []);
+    const navigateTo = (view: View) => {
+    window.history.pushState({ view }, '');
+    setCurrentView(view);
+  };
+
+  // Handle Navigation (Back Button HP & Browser)
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      const view = event.state?.view || 'menu';
+      setCurrentView(view);
+      if (view !== 'kasir') setEditingTransactionForKasir(null);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
   // Global Printer State & Refs
   const [isPrinterReady, setIsPrinterReady] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [printerAddress, setPrinterAddress] = useState(localStorage.getItem('printer_address') || '');
+   const isConnectingRef = useRef(false);
   const bluetoothDeviceRef = useRef<BluetoothDevice | null>(null);
   const gattServerRef = useRef<BluetoothGATTServer | null>(null);
   const printerCharacteristicRef = useRef<BluetoothGATTCharacteristic | null>(null);
+   const attemptConnection = useCallback(async (device: BluetoothDevice) => {
+    setIsConnecting(true);
+    logDebug(`Mencoba jabat tangan: ${device.name || 'Unknown'}`);
 
+    const SERVICE_UUID = '000018f0-0000-1000-8000-00805f9b34fb';
+    const CHARACTERISTIC_UUID = '00002af1-0000-1000-8000-00805f9b34fb';
+
+    try {
+      if (!device.gatt) throw new Error('GATT not available');
+      const server = device.gatt.connected ? device.gatt : await device.gatt.connect();
+      gattServerRef.current = server;
+      const service = await server.getPrimaryService(SERVICE_UUID);
+      const characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+      printerCharacteristicRef.current = characteristic;
+      setIsPrinterReady(true);
+      logDebug("Printer Berhasil Terhubung!");
+      if (device.name) {
+        setPrinterAddress(device.name);
+        localStorage.setItem('printer_address', device.name);
+      }
+      return true;
+    } catch {
+      logDebug("Gagal jabat tangan GATT");
+      setIsPrinterReady(false);
+      return false;
+    } finally {
+      setIsConnecting(false);
+    }
+  }, [logDebug]);
   // Mekanisme PWA Update Prompt
   const {
     needRefresh: [needRefresh],
@@ -164,69 +216,11 @@ export default function App() {
     }
   });
 
-  const [editingTransactionForKasir, setEditingTransactionForKasir] = useState<EnrichedTransaction | null>(null);
-   const isConnectingRef = useRef(false);
-
-  // Handle Navigation (Back Button HP & Browser)
-  useEffect(() => {
-    const handlePopState = (event: PopStateEvent) => {
-      const view = event.state?.view || 'menu';
-      setCurrentView(view);
-      if (view !== 'kasir') setEditingTransactionForKasir(null);
-    };
-
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
-
-  const navigateTo = (view: View) => {
-    window.history.pushState({ view }, '');
-    setCurrentView(view);
-  };
-
-  const attemptConnection = useCallback(async (device: BluetoothDevice) => {
-     // Status isConnecting dikelola oleh entry point (handleAutoConnect / handleSearchBluetooth)
-    setIsConnecting(true);
-
-
-    const SERVICE_UUID = '000018f0-0000-1000-8000-00805f9b34fb';
-    const CHARACTERISTIC_UUID = '00002af1-0000-1000-8000-00805f9b34fb';
-
-    try {
-       if (!device.gatt) throw new Error('GATT not available');
-      
-      // Gunakan koneksi yang sudah ada jika tersedia, jika tidak buat baru
-      const server = device.gatt.connected 
-        ? device.gatt 
-        : await device.gatt.connect();
-      gattServerRef.current = server;
-      
-      const service = await server.getPrimaryService(SERVICE_UUID);
-      const characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
-      
-      printerCharacteristicRef.current = characteristic;
-      setIsPrinterReady(true);
-      if (device.name) {
-        setPrinterAddress(device.name);
-        localStorage.setItem('printer_address', device.name);
-      }
-
-      device.addEventListener('gattserverdisconnected', () => {
-        setIsPrinterReady(false);
-        gattServerRef.current = null;
-        printerCharacteristicRef.current = null;
-      });
-      return true;
-    } catch {
-      setIsPrinterReady(false);
-      return false;
-    }
-  }, []);
-
   const handleSearchBluetooth = async () => {
     const nav = navigator as ExtendedNavigator;
     if (!nav.bluetooth) return false;
 
+    logDebug("Membuka dialog pencarian manual...");
     if (isConnectingRef.current) return false;
     isConnectingRef.current = true;
     setIsConnecting(true);
@@ -252,11 +246,20 @@ export default function App() {
   };
 
   const handleAutoConnect = useCallback(async (force = false) => {
-    if ((isPrinterReady || isConnectingRef.current) && !force) return;
+    if (isPrinterReady && !force) return;
+    
+    if (isConnectingRef.current && !force) {
+      logDebug("Auto-connect: Masih sibuk mencari...");
+      return;
+    }
 
     const nav = navigator as ExtendedNavigator;
-    if (!nav.bluetooth?.getDevices) return;
+    if (!nav.bluetooth?.getDevices) {
+      logDebug("Browser tak dukung pencarian otomatis");
+      return;
+    }
 
+    logDebug("Memulai pencarian otomatis...");
     isConnectingRef.current = true;
     setIsConnecting(true);
 
@@ -264,20 +267,25 @@ export default function App() {
       const devices = await nav.bluetooth.getDevices();
       if (devices.length > 0) {
         const savedName = localStorage.getItem('printer_address');
+        logDebug(`Ditemukan ${devices.length} perangkat diizinkan`);
         const printer = devices.find((d: BluetoothDevice) => d.name === savedName) || devices[0];
         
         if (printer) {
           bluetoothDeviceRef.current = printer;
           await attemptConnection(printer);
+        } else {
+          logDebug("Printer tersimpan tak ditemukan");
         }
+      } else {
+        logDebug("Daftar izin browser kosong");
       }
     } catch {
-      console.log("Auto-connect silent failure (normal after refresh)");
+      logDebug("Gagal akses Bluetooth");
     } finally {
       isConnectingRef.current = false;
       setIsConnecting(false);
     }
-  }, [isPrinterReady, attemptConnection]);
+  }, [isPrinterReady, attemptConnection, logDebug]);
 
   const printReceipt = async (transaction: EnrichedTransaction) => {
     if (!printerCharacteristicRef.current) {
@@ -420,6 +428,7 @@ export default function App() {
       fetchTodayData();
       handleAutoConnect(); // Pastikan mencari printer saat di menu utama
     } else if (currentView === 'kasir') {
+      logDebug("Masuk Kasir: Trigger Auto Connect");
       handleAutoConnect(); // Cari otomatis khusus saat masuk menu kasir
       
       // Lakukan percobaan ulang setiap 5 detik jika belum terhubung saat di menu kasir
@@ -433,7 +442,7 @@ export default function App() {
     return () => {
       if (cashierInterval) clearInterval(cashierInterval);
     };
-  }, [currentView, fetchTodayData, handleAutoConnect, isPrinterReady]);
+  },[currentView, fetchTodayData, handleAutoConnect, isPrinterReady, logDebug]);
 
   if (initError) {
     return (
@@ -553,6 +562,13 @@ export default function App() {
             <p className="text-sm font-bold leading-none mb-1">Versi Baru Tersedia!</p>
             <p className="text-[10px] text-stone-400 font-medium">Klik di sini untuk update aplikasi</p>
           </div>
+        </div>
+      )}
+
+      {/* Debug Toast Monitor */}
+      {debugMsg && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[300] bg-stone-900/90 text-white text-[9px] font-mono px-4 py-2 rounded-full shadow-2xl backdrop-blur-sm border border-white/10 pointer-events-none animate-in fade-in slide-in-from-top">
+          STATUS: {debugMsg}
         </div>
       )}
     </div>
