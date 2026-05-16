@@ -2,10 +2,12 @@ import path from "path"
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 import { VitePWA } from 'vite-plugin-pwa'
+import basicSsl from '@vitejs/plugin-basic-ssl'
 
 export default defineConfig({
   plugins: [
     react(),
+    basicSsl(),
     VitePWA({
       registerType: 'prompt', // Berubah menjadi prompt agar muncul notifikasi "Update Tersedia"
       includeAssets: ['logo.jpeg', 'logo-192x192.png', 'logo-512x512.png'],
@@ -36,4 +38,7 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  server: {
+    host: true
+  }
 })
