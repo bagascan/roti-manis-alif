@@ -185,8 +185,7 @@ export default function App() {
   };
 
   const attemptConnection = useCallback(async (device: BluetoothDevice) => {
-      if (isConnectingRef.current) return false;
-    isConnectingRef.current = true;
+     // Status isConnecting dikelola oleh entry point (handleAutoConnect / handleSearchBluetooth)
     setIsConnecting(true);
 
 
@@ -221,9 +220,6 @@ export default function App() {
     } catch {
       setIsPrinterReady(false);
       return false;
-    } finally {
-      isConnectingRef.current = false;
-      setIsConnecting(false);
     }
   }, []);
 
@@ -231,11 +227,14 @@ export default function App() {
     const nav = navigator as ExtendedNavigator;
     if (!nav.bluetooth) return false;
 
+    if (isConnectingRef.current) return false;
+    isConnectingRef.current = true;
+    setIsConnecting(true);
+
     const SERVICE_UUID = '000018f0-0000-1000-8000-00805f9b34fb';
 
     try {
       const device = await nav.bluetooth.requestDevice({
-        
         filters: [{ services: [SERVICE_UUID] }],
         optionalServices: [SERVICE_UUID]
       });
@@ -245,6 +244,9 @@ export default function App() {
       }
     } catch (e) {
       console.error(e);
+    } finally {
+      isConnectingRef.current = false;
+      setIsConnecting(false);
     }
     return false;
   };
@@ -252,24 +254,28 @@ export default function App() {
   const handleAutoConnect = useCallback(async (force = false) => {
     if ((isPrinterReady || isConnectingRef.current) && !force) return;
 
-    // 1. Ambil list device yang sudah pernah di-pairing sebelumnya dari browser
     const nav = navigator as ExtendedNavigator;
-    if (nav.bluetooth?.getDevices) {
-      try {
-        const devices = await nav.bluetooth.getDevices();
-        if (devices.length > 0) {
-          const savedName = localStorage.getItem('printer_address');
-          // Cari printer berdasarkan nama yang tersimpan, atau ambil yang pertama jika tidak ada
-          const printer = devices.find((d: BluetoothDevice) => d.name === savedName) || devices[0];
-          
-          if (printer) {
-            bluetoothDeviceRef.current = printer;
-            await attemptConnection(printer);
-          }
+    if (!nav.bluetooth?.getDevices) return;
+
+    isConnectingRef.current = true;
+    setIsConnecting(true);
+
+    try {
+      const devices = await nav.bluetooth.getDevices();
+      if (devices.length > 0) {
+        const savedName = localStorage.getItem('printer_address');
+        const printer = devices.find((d: BluetoothDevice) => d.name === savedName) || devices[0];
+        
+        if (printer) {
+          bluetoothDeviceRef.current = printer;
+          await attemptConnection(printer);
         }
-      } catch {
-        console.log("Auto-connect silent failure (normal after refresh)");
       }
+    } catch {
+      console.log("Auto-connect silent failure (normal after refresh)");
+    } finally {
+      isConnectingRef.current = false;
+      setIsConnecting(false);
     }
   }, [isPrinterReady, attemptConnection]);
 
