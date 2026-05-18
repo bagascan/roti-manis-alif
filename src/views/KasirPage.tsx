@@ -64,7 +64,7 @@ export default function KasirPage({ editData, isPrinterReady, onSearchBluetooth,
     const minPrice = item.cartUnit === 'satuan' ? item.hargaBeli : Math.ceil(item.hargaBeli / item.isiPerSatuan);
     return item.cartHargaJual < minPrice;
   });
-  const isPaymentInvalid = totalCart > 0 && jumlahBayar <= 0;
+  const isPaymentInvalid = totalCart <= 0 && jumlahBayar > 0; // Payment is invalid if cart is empty/zero but payment is positive
   useEffect(() => {
     loadData();
     if (editData) {

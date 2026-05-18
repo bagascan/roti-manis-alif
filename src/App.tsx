@@ -257,6 +257,7 @@ export default function App() {
     
     if (isConnectingRef.current && !force) return;
 
+    // Coba gunakan kembali device yang sudah ada di memory jika tersedia
     const nav = navigator as ExtendedNavigator;
 
     // 1. Jika device masih ada di memori (pindah-pindah menu tanpa refresh)
