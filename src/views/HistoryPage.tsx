@@ -9,7 +9,9 @@ type EnrichedTransactionItem = Transaction['items'][number] & { productName?: st
 export type EnrichedTransaction = Omit<Transaction, 'items'> & {
   customerName?: string;
   items: EnrichedTransactionItem[];
-  profit?: number; // Added profit property
+  grossProfit?: number;
+  returnAmount?: number;
+  netProfit?: number;
 };
 
 interface HistoryProps {
@@ -64,19 +66,24 @@ export default function HistoryPage({ isPrinterReady, onPrint, onSearchBluetooth
       }))
     }));
 		
-		const transactionsWithProfit = enriched.map(t => {
-      let transactionProfit = 0;
+		const transactionsWithStats = enriched.map(t => {
+      let grossProfit = 0;
+      let returnAmount = 0;
+      let returnProfit = 0;
+
       t.items.forEach(item => {
-        let itemProfit = (item.harga - item.hargaBeli) * item.qty;
-        if (item.subtotal < 0) { // If it's a return, reverse the profit calculation
-          itemProfit = -itemProfit;
+        const itemProfit = (item.harga - item.hargaBeli) * item.qty;
+        if (item.subtotal >= 0) {
+          grossProfit += itemProfit;
+        } else {
+          returnAmount += Math.abs(item.subtotal);
+          returnProfit += itemProfit;
         }
-        transactionProfit += itemProfit;
       });
-      return { ...t, profit: transactionProfit };
+      return { ...t, grossProfit, returnAmount, netProfit: grossProfit - returnProfit };
     });
 
-    setTransactions(transactionsWithProfit);
+    setTransactions(transactionsWithStats);
   };
 
   const handlePrintOrShowModal = (t: EnrichedTransaction) => {
@@ -277,15 +284,24 @@ export default function HistoryPage({ isPrinterReady, onPrint, onSearchBluetooth
                   <div className="text-right">
                     <span className="text-xs text-stone-400 uppercase font-bold">Total</span>
                     <p className="text-base font-bold text-blue-600">Rp {formatRupiah(t.total)}</p>
-                    {/* Display profit */}
-                    {t.profit !== undefined && (
-                      <div className="flex flex-col items-end mt-1">
-                        <span className="text-[10px] text-stone-400 uppercase font-bold">Laba</span>
-                        <p className={`text-sm font-bold ${t.profit >= 0 ? 'text-green-600' : 'text-rose-600'}`}>
-                          Rp {formatRupiah(t.profit)}
-                        </p>
-                      </div>
-                    )}
+                  </div>
+                </div>
+
+                {/* Stats Row */}
+                <div className="grid grid-cols-3 gap-2 pt-3 mt-2 border-t border-stone-50">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] text-stone-400 uppercase font-bold">Laba Kotor</span>
+                    <span className="text-xs font-bold text-green-600">Rp {formatRupiah(t.grossProfit || 0)}</span>
+                  </div>
+                  <div className="flex flex-col text-center border-x border-stone-50 px-1">
+                    <span className="text-[10px] text-stone-400 uppercase font-bold">Retur</span>
+                    <span className="text-xs font-bold text-rose-600">Rp {formatRupiah(t.returnAmount || 0)}</span>
+                  </div>
+                  <div className="flex flex-col text-right">
+                    <span className="text-[10px] text-stone-400 uppercase font-bold">Laba Bersih</span>
+                    <span className={`text-xs font-bold ${(t.netProfit || 0) >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>
+                      Rp {formatRupiah(t.netProfit || 0)}
+                    </span>
                   </div>
                 </div>
               </div>
