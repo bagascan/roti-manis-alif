@@ -69,18 +69,21 @@ export default function HistoryPage({ isPrinterReady, onPrint, onSearchBluetooth
 		const transactionsWithStats = enriched.map(t => {
       let grossProfit = 0;
       let returnAmount = 0;
-      let returnProfit = 0;
 
       t.items.forEach(item => {
-        const itemProfit = (item.harga - item.hargaBeli) * item.qty;
+        const product = pData.find(p => p.id === item.productId);
+        const isi = product?.isiPerSatuan || 1;
+        // Normalisasi harga beli jika unit yang terjual adalah pcs
+        const unitCost = item.unit === 'satuan' ? item.hargaBeli : item.hargaBeli / isi;
+        const itemProfit = (item.harga - unitCost) * item.qty;
+
         if (item.subtotal >= 0) {
           grossProfit += itemProfit;
         } else {
           returnAmount += Math.abs(item.subtotal);
-          returnProfit += itemProfit;
         }
       });
-      return { ...t, grossProfit, returnAmount, netProfit: grossProfit - returnProfit };
+      return { ...t, grossProfit, returnAmount, netProfit: grossProfit - returnAmount };
     });
 
     setTransactions(transactionsWithStats);

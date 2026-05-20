@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { db, Transaction, Expense, Customer, Product, Restock } from '../db';
 import { Search, BarChart3, TrendingUp, TrendingDown, Wallet, Package } from 'lucide-react';
 import { formatRupiah, getLocalDateString } from '../utils/formatters';
@@ -55,32 +55,46 @@ export default function LaporanPage() {
     }
   }).sort((a, b) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime());
 
-  let grossSales = 0;
-  let grossReturns = 0;
-  let totalCOGS = 0;
+  const { grossSales, grossReturns, totalExpenses, totalOtherIncome, totalKulaan, netProfit, transProfit, totalGrossProfit } = useMemo(() => {
+    let gSales = 0;
+    let gReturns = 0;
+    let tCOGS = 0;
 
-  transactions.forEach(t => {
-    t.items.forEach(item => {
-      const product = products.find(p => p.id === item.productId);
-      const isi = product?.isiPerSatuan || 1;
-      const costPerUnitSold = item.unit === 'satuan' ? item.hargaBeli : item.hargaBeli / isi;
-      const itemCost = costPerUnitSold * item.qty;
+    transactions.forEach(t => {
+      t.items.forEach(item => {
+        const product = products.find(p => p.id === item.productId);
+        const isi = product?.isiPerSatuan || 1;
+        const costPerUnitSold = item.unit === 'satuan' ? item.hargaBeli : item.hargaBeli / isi;
+        const itemCost = costPerUnitSold * item.qty;
 
-      if (item.subtotal >= 0) {
-        grossSales += item.subtotal;
-        totalCOGS += itemCost;
-      } else {
-        grossReturns += Math.abs(item.subtotal);
-        totalCOGS -= itemCost;
-      }
+        if (item.subtotal >= 0) {
+          gSales += item.subtotal;
+          tCOGS += itemCost;
+        } else {
+          gReturns += Math.abs(item.subtotal);
+        }
+      });
     });
-  });
 
-  const totalExpenses = expenses.filter(e => e.tipe !== 'pemasukkan').reduce((acc, e) => acc + e.nominal, 0);
-  const totalOtherIncome = expenses.filter(e => e.tipe === 'pemasukkan').reduce((acc, e) => acc + e.nominal, 0);
-  const totalKulaan = restocks.reduce((acc, r) => acc + r.total, 0);
-  
-  const netProfit = (grossSales - grossReturns - totalCOGS) - totalExpenses + totalOtherIncome;
+    const tExp = expenses.filter(e => e.tipe !== 'pemasukkan').reduce((acc, e) => acc + e.nominal, 0);
+    const tIncome = expenses.filter(e => e.tipe === 'pemasukkan').reduce((acc, e) => acc + e.nominal, 0);
+    const tKulaan = restocks.reduce((acc, r) => acc + r.total, 0);
+    
+    const tGrossProfit = gSales - tCOGS;
+    const tProfit = tGrossProfit - gReturns;
+    const nProfit = tProfit - tExp + tIncome;
+
+    return { 
+      grossSales: gSales, 
+      grossReturns: gReturns, 
+      totalExpenses: tExp, 
+      totalOtherIncome: tIncome, 
+      totalKulaan: tKulaan, 
+      netProfit: nProfit,
+      transProfit: tProfit,
+      totalGrossProfit: tGrossProfit
+    };
+  }, [transactions, products, expenses, restocks]);
 
   return (
     <main className="flex-1 overflow-y-auto p-4 bg-stone-50 space-y-4">
@@ -101,9 +115,16 @@ export default function LaporanPage() {
         <div className="bg-white p-3 rounded-xl shadow-sm border border-stone-100">
           <div className="flex items-center gap-1.5 mb-1">
             <TrendingUp size={12} className="text-green-500" />
-            <p className="text-[9px] text-stone-400 uppercase font-bold">Pembelian Kotor</p>
+            <p className="text-[9px] text-stone-400 uppercase font-bold">Penjualan Kotor</p>
           </div>
           <p className="text-sm font-bold text-stone-700">Rp {formatRupiah(grossSales)}</p>
+        </div>
+        <div className="bg-white p-3 rounded-xl shadow-sm border border-stone-100">
+          <div className="flex items-center gap-1.5 mb-1">
+            <TrendingUp size={12} className="text-emerald-500" />
+            <p className="text-[9px] text-stone-400 uppercase font-bold">Laba Kotor (Margin)</p>
+          </div>
+          <p className="text-sm font-bold text-emerald-600">Rp {formatRupiah(totalGrossProfit)}</p>
         </div>
         <div className="bg-white p-3 rounded-xl shadow-sm border border-stone-100">
           <div className="flex items-center gap-1.5 mb-1">
@@ -111,6 +132,13 @@ export default function LaporanPage() {
             <p className="text-[9px] text-stone-400 uppercase font-bold">Total Retur</p>
           </div>
           <p className="text-sm font-bold text-stone-700">Rp {formatRupiah(grossReturns)}</p>
+        </div>
+        <div className="bg-white p-3 rounded-xl shadow-sm border border-stone-100">
+          <div className="flex items-center gap-1.5 mb-1">
+            <BarChart3 size={12} className="text-blue-500" />
+            <p className="text-[9px] text-stone-400 uppercase font-bold">Laba Transaksi (Netto)</p>
+          </div>
+          <p className="text-sm font-bold text-blue-600">Rp {formatRupiah(transProfit)}</p>
         </div>
         <div className="bg-white p-3 rounded-xl shadow-sm border border-stone-100">
           <div className="flex items-center gap-1.5 mb-1">
@@ -136,7 +164,7 @@ export default function LaporanPage() {
         <div className="bg-stone-800 p-3 rounded-xl shadow-sm border border-stone-700">
           <div className="flex items-center gap-1.5 mb-1">
             <BarChart3 size={12} className="text-green-400" />
-            <p className="text-[9px] text-stone-500 uppercase font-bold">Laba Bersih</p>
+            <p className="text-[9px] text-stone-500 uppercase font-bold">Laba Bersih (Setelah Biaya)</p>
           </div>
           <p className="text-sm font-bold text-green-400">Rp {formatRupiah(netProfit)}</p>
         </div>

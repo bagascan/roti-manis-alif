@@ -126,7 +126,7 @@ const getLogoBytes = async (base64: string): Promise<Uint8Array | null> => {
 
 export default function App() {
   const [currentView, setCurrentView] = useState<View>('menu')
-  const [todayStats, setTodayStats] = useState({ sales: 0, profit: 0 });
+  const [todayStats, setTodayStats] = useState({ sales: 0, grossProfit: 0, transProfit: 0, netProfit: 0 });
   const [initError, setInitError] = useState<string | null>(null);
   
   // Sinkronisasi status printer ke Ref untuk menghindari re-trigger pada useEffect
@@ -371,7 +371,6 @@ export default function App() {
             cogs += itemCost;
           } else {
             returns += Math.abs(item.subtotal);
-            cogs -= itemCost;
           }
         });
       });
@@ -380,9 +379,11 @@ export default function App() {
       const expensesTotal = exp.filter(e => e.tipe !== 'pemasukkan').reduce((acc, e) => acc + e.nominal, 0);
       const otherIncomeTotal = exp.filter(e => e.tipe === 'pemasukkan').reduce((acc, e) => acc + e.nominal, 0);
       
-      const profit = (sales - returns - cogs) - expensesTotal + otherIncomeTotal;
+      const gProfit = sales - cogs;
+      const tProfit = gProfit - returns;
+      const nProfit = tProfit - expensesTotal + otherIncomeTotal;
 
-      setTodayStats({ sales, profit });
+      setTodayStats({ sales, grossProfit: gProfit, transProfit: tProfit, netProfit: nProfit });
     } catch (err) {
       console.error("Initialization Error:", err);
       setInitError("Gagal memuat data. Struktur database mungkin berubah.");
@@ -457,8 +458,10 @@ export default function App() {
                 <h1 className="text-2xl font-extrabold mt-0.5 uppercase">ROTI MANIS ARIF</h1>
                 <div className="mt-2 text-[11px] text-orange-50 font-medium leading-tight">
                   <p className="mb-0.5">Laporan Hari Ini</p>
-                  <p>Total Pembelian : Rp {formatRupiah(todayStats.sales)}</p>
-                  <p>Total Laba Bersih : Rp {formatRupiah(todayStats.profit)}</p>
+                  <p>Total Penjualan : Rp {formatRupiah(todayStats.sales)}</p>
+                  <p>Laba Kotor (Margin) : Rp {formatRupiah(todayStats.grossProfit)}</p>
+                  <p>Laba Transaksi : Rp {formatRupiah(todayStats.transProfit)}</p>
+                  <p className="font-extrabold text-white">Laba Bersih (Final) : Rp {formatRupiah(todayStats.netProfit)}</p>
                 </div>
               </div>
             </div>
