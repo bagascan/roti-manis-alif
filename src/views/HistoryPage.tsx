@@ -9,6 +9,7 @@ type EnrichedTransactionItem = Transaction['items'][number] & { productName?: st
 export type EnrichedTransaction = Omit<Transaction, 'items'> & {
   customerName?: string;
   items: EnrichedTransactionItem[];
+  profit?: number; // Added profit property
 };
 
 interface HistoryProps {
@@ -62,8 +63,20 @@ export default function HistoryPage({ isPrinterReady, onPrint, onSearchBluetooth
         productName: pData.find(p => p.id === item.productId)?.nama || 'Produk Terhapus'
       }))
     }));
+		
+		const transactionsWithProfit = enriched.map(t => {
+      let transactionProfit = 0;
+      t.items.forEach(item => {
+        let itemProfit = (item.harga - item.hargaBeli) * item.qty;
+        if (item.subtotal < 0) { // If it's a return, reverse the profit calculation
+          itemProfit = -itemProfit;
+        }
+        transactionProfit += itemProfit;
+      });
+      return { ...t, profit: transactionProfit };
+    });
 
-    setTransactions(enriched);
+    setTransactions(transactionsWithProfit);
   };
 
   const handlePrintOrShowModal = (t: EnrichedTransaction) => {
@@ -264,6 +277,15 @@ export default function HistoryPage({ isPrinterReady, onPrint, onSearchBluetooth
                   <div className="text-right">
                     <span className="text-xs text-stone-400 uppercase font-bold">Total</span>
                     <p className="text-base font-bold text-blue-600">Rp {formatRupiah(t.total)}</p>
+                    {/* Display profit */}
+                    {t.profit !== undefined && (
+                      <div className="flex flex-col items-end mt-1">
+                        <span className="text-[10px] text-stone-400 uppercase font-bold">Laba</span>
+                        <p className={`text-sm font-bold ${t.profit >= 0 ? 'text-green-600' : 'text-rose-600'}`}>
+                          Rp {formatRupiah(t.profit)}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
