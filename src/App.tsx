@@ -14,6 +14,7 @@ import ExpensePage from './views/ExpensePage'
 import SettingsPage from './views/SettingsPage'
 import LaporanPage from './views/LaporanPage'
 import LaporanReturPage from './views/LaporanReturPage'
+import LaporanProdukPage from './views/LaporanProdukPage'
 import TransferStokPage from './views/TransferStokPage'
 import { receiptHelper } from './views/receiptHelper'
 import { 
@@ -67,7 +68,7 @@ interface ExtendedNavigator extends Navigator {
   bluetooth?: Bluetooth;
 }
 
-type View = 'menu' | 'barang' | 'pelanggan' | 'kasir' | 'riwayat' | 'laporan' | 'restok' | 'penyesuaian' | 'supplier' | 'pengaturan' | 'pengeluaran' | 'laporan-retur' | 'transfer-stok'
+type View = 'menu' | 'barang' | 'pelanggan' | 'kasir' | 'riwayat' | 'laporan' | 'restok' | 'penyesuaian' | 'supplier' | 'pengaturan' | 'pengeluaran' | 'laporan-retur' | 'laporan-produk' | 'transfer-stok'
 
 // Helper untuk mengubah Logo (Base64/URL) menjadi ESC/POS Bit Image
 const getLogoBytes = async (base64: string): Promise<Uint8Array | null> => {
@@ -435,6 +436,7 @@ export default function App() {
     { id: 'pengaturan', label: 'Pengaturan', icon: <Settings size={20} />, color: 'bg-stone-200 text-stone-700' },
     { id: 'laporan-retur', label: 'Laporan Retur', icon: <RotateCcw size={20} />, color: 'bg-indigo-100 text-indigo-700' },
     { id: 'laporan', label: 'Laporan', icon: <BarChart3 size={20} />, color: 'bg-purple-100 text-purple-700' },
+    { id: 'laporan-produk', label: 'Laporan Produk', icon: <Package size={20} />, color: 'bg-emerald-100 text-emerald-700' },
     { id: 'transfer-stok', label: 'Transfer Stok', icon: <ArrowLeftRight size={20} />, color: 'bg-teal-100 text-teal-700' },
   ];
 
@@ -507,6 +509,7 @@ export default function App() {
           {currentView === 'pengeluaran' && <ExpensePage />}
           {currentView === 'pengaturan' && <SettingsPage isPrinterReady={isPrinterReady} printerAddress={printerAddress} onSearchBluetooth={handleSearchBluetooth} printerCharacteristic={printerCharacteristicRef.current} />}
           {currentView === 'laporan-retur' && <LaporanReturPage />}
+          {currentView === 'laporan-produk' && <LaporanProdukPage />}
           {currentView === 'laporan' && <LaporanPage />}
           {currentView === 'transfer-stok' && <TransferStokPage />}
           {currentView === 'kasir' && <KasirPage editData={editingTransactionForKasir} isPrinterReady={isPrinterReady} onSearchBluetooth={handleSearchBluetooth} onPrint={printReceipt} onFinished={() => { const wasEditing = !!editingTransactionForKasir; setEditingTransactionForKasir(null); if (wasEditing) window.history.back(); }} />}

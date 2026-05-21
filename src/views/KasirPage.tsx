@@ -113,8 +113,17 @@ export default function KasirPage({ editData, isPrinterReady, onSearchBluetooth,
   const addToCart = (product: Product) => {
     const existing = cart.find(item => item.id === product.id && item.itemMode === mode);
     if (existing) {
-      setCart(cart.map(item => (item.id === product.id && item.itemMode === mode) ? { ...item, cartQty: item.cartQty + 1 } : item));
+      const nextQty = existing.cartQty + 1;
+      if (mode === 'penjualan' && nextQty > product.stokToko) {
+        showToast(`Stok tidak cukup! Maksimal: ${product.stokToko}`, 'error');
+        return;
+      }
+      setCart(cart.map(item => (item.id === product.id && item.itemMode === mode) ? { ...item, cartQty: nextQty } : item));
     } else {
+      if (mode === 'penjualan' && product.stokToko <= 0) {
+        showToast('Stok habis!', 'error');
+        return;
+      }
       setCart([...cart, { ...product, cartQty: 1, cartUnit: 'satuan', cartHargaJual: product.hargaJual, itemMode: mode }]);
     }
     showToast(`${product.nama} masuk keranjang`, 'success');
@@ -122,9 +131,16 @@ export default function KasirPage({ editData, isPrinterReady, onSearchBluetooth,
 
   const handleQtyModalSubmit = () => {
     if (!qtyModal) return;
-    const { product, qty } = qtyModal;
+    const { product } = qtyModal;
+    let { qty } = qtyModal;
     const existing = cart.find(item => item.id === product.id && item.itemMode === mode);
     
+    // Validasi stok: Jika mode penjualan, input tidak boleh melebihi stok toko
+    if (mode === 'penjualan' && qty > product.stokToko) {
+      showToast(`Stok tidak cukup! Otomatis diisi maksimal: ${product.stokToko}`, 'error');
+      qty = product.stokToko;
+    }
+
     if (qty <= 0) {
       if (existing) removeFromCart(product.id!, mode);
     } else {
@@ -450,13 +466,27 @@ export default function KasirPage({ editData, isPrinterReady, onSearchBluetooth,
                       <input
                         type="text"
                         value={item.cartQty === 0 ? '' : formatRupiah(item.cartQty)}
-                        onChange={(e) => updateCartItem(item.id!, item.itemMode, { cartQty: parseRupiah(e.target.value) })}
+                        onChange={(e) => {
+                          let val = parseRupiah(e.target.value);
+                          if (item.itemMode === 'penjualan' && val > item.stokToko) {
+                            showToast(`Stok tidak cukup! Otomatis diisi maksimal: ${item.stokToko}`, 'error');
+                            val = item.stokToko;
+                          }
+                          updateCartItem(item.id!, item.itemMode, { cartQty: val });
+                        }}
                         onBlur={() => { if (item.cartQty === 0) updateCartItem(item.id!, item.itemMode, { cartQty: 1 }); }}
                         className="w-12 text-center text-sm font-bold text-stone-800 bg-transparent outline-none"
                         inputMode="numeric"
                       />
                       <button 
-                        onClick={() => updateCartItem(item.id!, item.itemMode, { cartQty: item.cartQty + 1 })}
+                        onClick={() => {
+                          const nextQty = item.cartQty + 1;
+                          if (item.itemMode === 'penjualan' && nextQty > item.stokToko) {
+                            showToast(`Stok tidak cukup! Maksimal: ${item.stokToko}`, 'error');
+                            return;
+                          }
+                          updateCartItem(item.id!, item.itemMode, { cartQty: nextQty });
+                        }}
                         className="p-1 text-stone-400 hover:text-green-600 transition-colors"
                       >
                         <Plus size={14} />
