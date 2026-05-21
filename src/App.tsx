@@ -126,7 +126,7 @@ const getLogoBytes = async (base64: string): Promise<Uint8Array | null> => {
 
 export default function App() {
   const [currentView, setCurrentView] = useState<View>('menu')
-  const [todayStats, setTodayStats] = useState({ sales: 0, grossProfit: 0, transProfit: 0, netProfit: 0 });
+  const [todayStats, setTodayStats] = useState({ sales: 0, returns: 0, transProfit: 0 });
   const [initError, setInitError] = useState<string | null>(null);
   
   // Sinkronisasi status printer ke Ref untuk menghindari re-trigger pada useEffect
@@ -349,9 +349,8 @@ export default function App() {
       const start = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0, 0);
       const end = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999);
 
-      const [trans, exp, products] = await Promise.all([
+      const [trans, products] = await Promise.all([
         db.transactions.where('tanggal').between(start, end, true, true).toArray(),
-        db.expenses.where('tanggal').between(start, end, true, true).toArray(),
         db.products.toArray()
       ]);
 
@@ -374,16 +373,10 @@ export default function App() {
           }
         });
       });
+      // Laba Transaksi = (Penjualan - Modal) - Retur
+      const tProfit = (sales - cogs) - returns;
 
-      // Filter pengeluaran dan pemasukkan lain
-      const expensesTotal = exp.filter(e => e.tipe !== 'pemasukkan').reduce((acc, e) => acc + e.nominal, 0);
-      const otherIncomeTotal = exp.filter(e => e.tipe === 'pemasukkan').reduce((acc, e) => acc + e.nominal, 0);
-      
-      const gProfit = sales - cogs;
-      const tProfit = gProfit - returns;
-      const nProfit = tProfit - expensesTotal + otherIncomeTotal;
-
-      setTodayStats({ sales, grossProfit: gProfit, transProfit: tProfit, netProfit: nProfit });
+      setTodayStats({ sales, returns, transProfit: tProfit });
     } catch (err) {
       console.error("Initialization Error:", err);
       setInitError("Gagal memuat data. Struktur database mungkin berubah.");
@@ -459,9 +452,8 @@ export default function App() {
                 <div className="mt-2 text-[11px] text-orange-50 font-medium leading-tight">
                   <p className="mb-0.5">Laporan Hari Ini</p>
                   <p>Total Penjualan : Rp {formatRupiah(todayStats.sales)}</p>
-                  <p>Laba Kotor (Margin) : Rp {formatRupiah(todayStats.grossProfit)}</p>
-                  <p>Laba Transaksi : Rp {formatRupiah(todayStats.transProfit)}</p>
-                  <p className="font-extrabold text-white">Laba Bersih (Final) : Rp {formatRupiah(todayStats.netProfit)}</p>
+                  <p>Total Retur : Rp {formatRupiah(todayStats.returns)}</p>
+                  <p className="font-extrabold text-white">Laba Transaksi : Rp {formatRupiah(todayStats.transProfit)}</p>
                 </div>
               </div>
             </div>
