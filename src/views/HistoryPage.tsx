@@ -290,6 +290,13 @@ export default function HistoryPage({ isPrinterReady, onPrint, onSearchBluetooth
                   </div>
                 </div>
 
+                {t.status === 'belum_lunas' && (
+                  <div className="flex justify-between items-center mt-2 px-2 py-1.5 bg-rose-50/50 rounded-xl border border-rose-100">
+                    <div className="text-[10px] font-bold text-stone-500 uppercase">Dibayar: <span className="text-green-600">Rp {formatRupiah(t.bayar || 0)}</span></div>
+                    <div className="text-[10px] font-bold text-stone-500 uppercase text-right">Kurang: <span className="text-rose-600">Rp {formatRupiah(t.total - (t.bayar || 0))}</span></div>
+                  </div>
+                )}
+
                 {/* Stats Row */}
                 <div className="grid grid-cols-3 gap-2 pt-3 mt-2 border-t border-stone-50">
                   <div className="flex flex-col">
