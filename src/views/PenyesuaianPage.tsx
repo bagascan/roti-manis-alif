@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { db, type Adjustment, type Product } from '../db';
-import { Search, CheckCircle2, AlertCircle, Edit3, Trash2, Calendar, X} from 'lucide-react';
+import { db, type Adjustment, type Product, type Transfer } from '../db';
+import { Search, CheckCircle2, AlertCircle, Edit3, Trash2, Calendar, X, ArrowLeftRight } from 'lucide-react';
 import { formatRupiah, parseRupiah } from '../utils/formatters';
 
 export default function PenyesuaianPage() {
   const [adjustments, setAdjustments] = useState<(Adjustment & { productName?: string })[]>([]);
+  const [transfers, setTransfers] = useState<Transfer[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [view, setView] = useState<'productGrid' | 'history'>('productGrid');
   const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
@@ -31,9 +32,10 @@ export default function PenyesuaianPage() {
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
-    const [adjData, pData] = await Promise.all([
+    const [adjData, pData, trData] = await Promise.all([
       db.adjustments.orderBy('tanggal').reverse().toArray(),
-      db.products.toArray()
+      db.products.toArray(),
+      db.transfers.orderBy('tanggal').reverse().toArray()
     ]);
 
     const enriched = adjData.map(adj => ({
@@ -42,6 +44,7 @@ export default function PenyesuaianPage() {
     }));
 
     setAdjustments(enriched);
+    setTransfers(trData);
     setProducts(pData.filter(p => p.status === 'aktif'));
   };
 
@@ -234,38 +237,94 @@ export default function PenyesuaianPage() {
               <input type="text" placeholder="Cari riwayat penyesuaian..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
                 className="w-full pl-9 pr-3 py-2.5 bg-white border border-stone-200 rounded-xl text-sm outline-none shadow-sm" />
             </div>
-            {adjustments.filter(adj => adj.productName?.toLowerCase().includes(searchTerm.toLowerCase()) || adj.keterangan.toLowerCase().includes(searchTerm.toLowerCase())).map(adj => (
-              <div key={adj.id} className="bg-white border border-stone-100 p-3 rounded-xl shadow-sm">
-                <div className="flex justify-between items-start mb-1.5">
-                  <div>
-                    <div className="flex items-center gap-1.5 mb-0.5">
-                      <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-slate-50 text-slate-600 uppercase">{adj.tipeStok === 'stokToko' ? 'Toko' : 'Retur'}</span>
-                      <span className="text-xs text-stone-400 flex items-center gap-1"><Calendar size={10}/> {new Date(adj.tanggal).toLocaleDateString('id-ID')}</span>
+            {[
+              ...adjustments
+                .filter(adj => adj.productName?.toLowerCase().includes(searchTerm.toLowerCase()) || adj.keterangan.toLowerCase().includes(searchTerm.toLowerCase()))
+                .map(adj => ({ type: 'adjustment' as const, data: adj, sortDate: new Date(adj.tanggal).getTime() })),
+              ...transfers
+                .filter(tr => tr.customerName.toLowerCase().includes(searchTerm.toLowerCase()) || tr.items.some(i => i.productName.toLowerCase().includes(searchTerm.toLowerCase())))
+                .map(tr => ({ type: 'transfer' as const, data: tr, sortDate: new Date(tr.tanggal).getTime() }))
+            ].sort((a, b) => b.sortDate - a.sortDate).map(item => {
+              if (item.type === 'adjustment') {
+                const adj = item.data as Adjustment & { productName?: string };
+                return (
+                  <div key={`adj-${adj.id}`} className="bg-white border border-stone-100 p-3 rounded-xl shadow-sm">
+                    <div className="flex justify-between items-start mb-1.5">
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-slate-50 text-slate-600 uppercase">{adj.tipeStok === 'stokToko' ? 'Toko' : 'Retur'}</span>
+                          <span className="text-xs text-stone-400 flex items-center gap-1"><Calendar size={10}/> {new Date(adj.tanggal).toLocaleDateString('id-ID')}</span>
+                        </div>
+                        <h3 className="text-sm font-bold text-stone-800">{adj.productName}</h3>
+                        <p className="text-xs text-stone-500 mt-0.5">{adj.keterangan}</p>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => startEdit(adj)} className="p-2 bg-amber-50 text-amber-600 rounded-lg"><Edit3 size={14}/></button>
+                        <button onClick={() => setShowConfirmModal({ type: 'delete', id: adj.id })} className="p-2 bg-red-50 text-red-600 rounded-lg"><Trash2 size={14}/></button>
+                      </div>
                     </div>
-                    <h3 className="text-sm font-bold text-stone-800">{adj.productName}</h3>
-                    <p className="text-xs text-stone-500 mt-0.5">{adj.keterangan}</p>
+                    <div className="pt-1.5 border-t border-stone-50 flex justify-between items-center">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] text-stone-400 uppercase font-bold">Sebelum</span>
+                        <span className="text-sm font-bold text-stone-700">{adj.qtySebelum}</span>
+                      </div>
+                      <div className="flex flex-col text-center">
+                        <span className="text-[10px] text-stone-400 uppercase font-bold">Sesudah</span>
+                        <span className="text-sm font-bold text-stone-700">{adj.qtySesudah}</span>
+                      </div>
+                      <div className="flex flex-col text-right">
+                        <span className="text-[10px] text-stone-400 uppercase font-bold">Selisih</span>
+                        <span className={`text-sm font-bold ${adj.selisih >= 0 ? 'text-green-600' : 'text-red-600'}`}>{adj.selisih}</span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => startEdit(adj)} className="p-2 bg-amber-50 text-amber-600 rounded-lg"><Edit3 size={14}/></button>
-                    <button onClick={() => setShowConfirmModal({ type: 'delete', id: adj.id })} className="p-2 bg-red-50 text-red-600 rounded-lg"><Trash2 size={14}/></button>
+                );
+              } else {
+                const tr = item.data as Transfer;
+                return (
+                  <div key={`tr-${tr.id}`} className="bg-white border border-teal-100 p-3 rounded-xl shadow-sm">
+                    <div className="flex justify-between items-start mb-1.5">
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span className="text-xs font-bold px-1.5 py-0.5 rounded-full bg-teal-50 text-teal-700 uppercase flex items-center gap-1"><ArrowLeftRight size={10}/> Transfer Stok</span>
+                          <span className="text-xs text-stone-400 flex items-center gap-1"><Calendar size={10}/> {new Date(tr.tanggal).toLocaleDateString('id-ID')}</span>
+                        </div>
+                        <h3 className="text-sm font-bold text-stone-800">{tr.customerName}</h3>
+                        <p className="text-[10px] text-stone-400">Transaksi #{tr.transactionId}</p>
+                      </div>
+                    </div>
+                    <div className="space-y-1.5 mt-1.5">
+                      {tr.items.map((ti, idx) => (
+                        <div key={idx} className="bg-stone-50 p-2 rounded-lg">
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-xs font-bold text-stone-700">{ti.productName}</span>
+                            <span className="text-[10px] font-bold text-teal-600">Rp {formatRupiah(ti.subtotal)}</span>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 text-center text-[10px]">
+                            <div>
+                              <span className="text-stone-400 uppercase font-bold">Retur Sebelum</span>
+                              <p className="text-xs font-bold text-stone-700">{ti.stokReturSebelum}</p>
+                            </div>
+                            <div>
+                              <span className="text-stone-400 uppercase font-bold">Sesudah</span>
+                              <p className="text-xs font-bold text-stone-700">{ti.stokReturSesudah}</p>
+                            </div>
+                            <div>
+                              <span className="text-stone-400 uppercase font-bold">Selisih</span>
+                              <p className="text-xs font-bold text-rose-600">-{ti.qty}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-2 pt-2 border-t border-teal-50 flex justify-between items-center">
+                      <span className="text-[10px] text-stone-400 uppercase font-bold">Total Nominal</span>
+                      <span className="text-sm font-black text-teal-600">Rp {formatRupiah(tr.total)}</span>
+                    </div>
                   </div>
-                </div>
-                <div className="pt-1.5 border-t border-stone-50 flex justify-between items-center">
-                  <div className="flex flex-col">
-                    <span className="text-[10px] text-stone-400 uppercase font-bold">Sebelum</span>
-                    <span className="text-sm font-bold text-stone-700">{adj.qtySebelum}</span>
-                  </div>
-                  <div className="flex flex-col text-center">
-                    <span className="text-[10px] text-stone-400 uppercase font-bold">Sesudah</span>
-                    <span className="text-sm font-bold text-stone-700">{adj.qtySesudah}</span>
-                  </div>
-                  <div className="flex flex-col text-right">
-                    <span className="text-[10px] text-stone-400 uppercase font-bold">Selisih</span>
-                    <span className={`text-sm font-bold ${adj.selisih >= 0 ? 'text-green-600' : 'text-red-600'}`}>{adj.selisih}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
+                );
+              }
+            })}
           </div>
         )}
       </div>

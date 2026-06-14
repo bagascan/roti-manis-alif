@@ -71,6 +71,26 @@ export interface Adjustment {
   keterangan: string;
 }
 
+export interface TransferItem {
+  productId: number;
+  productName: string;
+  qty: number;
+  harga: number;
+  subtotal: number;
+  stokReturSebelum: number;
+  stokReturSesudah: number;
+}
+
+export interface Transfer {
+  id?: number;
+  tanggal: Date;
+  transactionId: number;
+  customerId?: number;
+  customerName: string;
+  items: TransferItem[];
+  total: number;
+}
+
 export class AlifDatabase extends Dexie {
   products!: Table<Product>;
   customers!: Table<Customer>;
@@ -79,10 +99,11 @@ export class AlifDatabase extends Dexie {
   expenses!: Table<Expense>;
   adjustments!: Table<Adjustment>;
   transactions!: Table<Transaction>;
+  transfers!: Table<Transfer>;
 
   constructor() {
     super('AlifBakeryDB');
-    this.version(19).stores({
+    this.version(20).stores({
       products: '++id, nama, kategori, supplierId, status',
       customers: '++id, nama, telepon, status, hutang',
       suppliers: '++id, nama, telepon, status',
@@ -90,6 +111,7 @@ export class AlifDatabase extends Dexie {
       expenses: '++id, tanggal, kategori, tipe',
       adjustments: '++id, tanggal, productId',
       transactions: '++id, tanggal, customerId, tipe, status',
+      transfers: '++id, tanggal, transactionId',
     });
   }
 }

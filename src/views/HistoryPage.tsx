@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { db, type Transaction, type Customer, type Product } from '../db';
-import { Search, History, Calendar, User, X, Edit3, Trash2, CheckCircle2, AlertCircle, Printer, Wallet, RefreshCw } from 'lucide-react';
+import { Search, History, Calendar, User, X, Edit3, Trash2, CheckCircle2, AlertCircle, Printer, Wallet, RefreshCw, ArrowLeftRight } from 'lucide-react';
 import { formatRupiah, parseRupiah } from '../utils/formatters';
 import html2canvas from 'html2canvas';
 
@@ -11,6 +11,7 @@ export type EnrichedTransaction = Omit<Transaction, 'items'> & {
   items: EnrichedTransactionItem[];
   grossProfit?: number;
   returnAmount?: number;
+  transferAmount?: number;
   netProfit?: number;
 };
 
@@ -33,6 +34,8 @@ export default function HistoryPage({ isPrinterReady, onPrint, onSearchBluetooth
   const [showConfirmModal, setShowConfirmModal] = useState<{ id?: number; type: 'delete' } | null>(null);
   const [swipedId, setSwipedId] = useState<number | null>(null);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferItems, setTransferItems] = useState<{ productId: number; productName: string; maxQty: number; qty: number; harga: number }[]>([]);
 
   const showToast = (message: string, type: 'success' | 'error') => { setToast({ message, type }); setTimeout(() => setToast(null), 3000); };
 
@@ -51,11 +54,19 @@ export default function HistoryPage({ isPrinterReady, onPrint, onSearchBluetooth
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
-    const [tData, cData, pData] = await Promise.all([
+    const [tData, cData, pData, trData] = await Promise.all([
       db.transactions.orderBy('tanggal').reverse().toArray(),
       db.customers.toArray() as Promise<Customer[]>,
-      db.products.toArray() as Promise<Product[]>
+      db.products.toArray() as Promise<Product[]>,
+      db.transfers.toArray()
     ]);
+
+    const transfersByTransaction: Record<number, number> = {};
+    trData.forEach(tr => {
+      if (tr.transactionId) {
+        transfersByTransaction[tr.transactionId] = (transfersByTransaction[tr.transactionId] || 0) + tr.total;
+      }
+    });
 
     const enriched = tData.map(t => ({
       ...t,
@@ -83,7 +94,8 @@ export default function HistoryPage({ isPrinterReady, onPrint, onSearchBluetooth
           returnAmount += Math.abs(item.subtotal);
         }
       });
-      return { ...t, grossProfit, returnAmount, netProfit: grossProfit - returnAmount };
+      const transferAmount = transfersByTransaction[t.id!] || 0;
+      return { ...t, grossProfit, returnAmount, transferAmount, netProfit: grossProfit - returnAmount + transferAmount };
     });
 
     setTransactions(transactionsWithStats);
@@ -192,6 +204,81 @@ export default function HistoryPage({ isPrinterReady, onPrint, onSearchBluetooth
     } catch { showToast('Gagal mencatat pelunasan', 'error'); }
   };
 
+  const openTransferModal = () => {
+    if (!detailTransaction) return;
+    const returItems = detailTransaction.items.filter(i => i.subtotal < 0);
+    const items = returItems.map(i => ({
+      productId: i.productId,
+      productName: i.productName || 'Produk',
+      maxQty: i.qty,
+      qty: i.qty,
+      harga: Math.abs(i.subtotal) / i.qty
+    }));
+    // Hanya buka jika ada item retur
+    if (items.length === 0) {
+      showToast('Tidak ada barang retur di transaksi ini', 'error');
+      return;
+    }
+    setTransferItems(items);
+    setShowTransferModal(true);
+  };
+
+  const handleProcessTransfer = async () => {
+    if (!detailTransaction) return;
+    const itemsToTransfer = transferItems.filter(i => i.qty > 0);
+    if (itemsToTransfer.length === 0) {
+      showToast('Tidak ada barang yang ditransfer', 'error');
+      return;
+    }
+
+    try {
+      await db.transaction('rw', [db.products, db.transfers], async () => {
+        const transferItemsData = [];
+        for (const item of itemsToTransfer) {
+          const p = await db.products.get(item.productId);
+          if (!p) continue;
+
+          const stokReturSebelum = p.stokRetur;
+          const stokReturSesudah = p.stokRetur - item.qty;
+
+          await db.products.update(p.id!, {
+            stokRetur: stokReturSesudah,
+            stokToko: p.stokToko + item.qty
+          });
+
+          transferItemsData.push({
+            productId: item.productId,
+            productName: item.productName,
+            qty: item.qty,
+            harga: item.harga,
+            subtotal: item.qty * item.harga,
+            stokReturSebelum,
+            stokReturSesudah
+          });
+        }
+
+        const total = transferItemsData.reduce((acc, i) => acc + i.subtotal, 0);
+
+        await db.transfers.add({
+          tanggal: new Date(),
+          transactionId: detailTransaction.id!,
+          customerId: detailTransaction.customerId,
+          customerName: detailTransaction.customerName || 'Umum',
+          items: transferItemsData,
+          total
+        });
+      });
+
+      showToast('Transfer stok retur berhasil!', 'success');
+      setShowTransferModal(false);
+      setDetailTransaction(null);
+      loadData();
+    } catch (err) {
+      console.error(err);
+      showToast('Gagal memproses transfer!', 'error');
+    }
+  };
+
   return (
     <main className="flex-1 overflow-y-auto p-4 bg-stone-50">
       {toast && (
@@ -298,17 +385,21 @@ export default function HistoryPage({ isPrinterReady, onPrint, onSearchBluetooth
                 )}
 
                 {/* Stats Row */}
-                <div className="grid grid-cols-3 gap-2 pt-3 mt-2 border-t border-stone-50">
+                <div className="grid grid-cols-4 gap-1 pt-3 mt-2 border-t border-stone-50">
                   <div className="flex flex-col">
-                    <span className="text-[10px] text-stone-400 uppercase font-bold">Laba Kotor</span>
+                    <span className="text-[10px] text-stone-400 uppercase font-bold">Kotor</span>
                     <span className="text-xs font-bold text-green-600">Rp {formatRupiah(t.grossProfit || 0)}</span>
                   </div>
-                  <div className="flex flex-col text-center border-x border-stone-50 px-1">
+                  <div className="flex flex-col text-center">
                     <span className="text-[10px] text-stone-400 uppercase font-bold">Retur</span>
                     <span className="text-xs font-bold text-rose-600">Rp {formatRupiah(t.returnAmount || 0)}</span>
                   </div>
+                  <div className="flex flex-col text-center">
+                    <span className="text-[10px] text-stone-400 uppercase font-bold">Transfer</span>
+                    <span className="text-xs font-bold text-teal-600">Rp {formatRupiah(t.transferAmount || 0)}</span>
+                  </div>
                   <div className="flex flex-col text-right">
-                    <span className="text-[10px] text-stone-400 uppercase font-bold">Laba Bersih</span>
+                    <span className="text-[10px] text-stone-400 uppercase font-bold">Bersih</span>
                     <span className={`text-xs font-bold ${(t.netProfit || 0) >= 0 ? 'text-blue-600' : 'text-rose-600'}`}>
                       Rp {formatRupiah(t.netProfit || 0)}
                     </span>
@@ -337,6 +428,9 @@ export default function HistoryPage({ isPrinterReady, onPrint, onSearchBluetooth
                  <p className="text-xs text-stone-400">{new Date(detailTransaction.tanggal).toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' })} • {detailTransaction.customerName}</p>
               </div>
               <div className="flex items-center gap-2">
+                {detailTransaction.items.some(i => i.subtotal < 0) && (
+                  <button onClick={openTransferModal} className="p-2 bg-teal-50 text-teal-600 rounded-full active:scale-95 transition-transform"><ArrowLeftRight size={16} /></button>
+                )}
                 <button onClick={() => handlePrintOrShowModal(detailTransaction)} className="p-2 bg-blue-50 text-blue-600 rounded-full active:scale-95 transition-transform"><Printer size={16} /></button>
                 <button onClick={() => setDetailTransaction(null)} className="p-1.5 bg-stone-100 rounded-full text-stone-400"><X size={16} /></button>
               </div>
@@ -433,6 +527,60 @@ export default function HistoryPage({ isPrinterReady, onPrint, onSearchBluetooth
                 <button onClick={confirmPelunasan} className="py-3 bg-stone-800 text-white rounded-2xl font-bold text-sm">Simpan Pembayaran</button>
                 <button onClick={() => setPelunasanData({ show: false, transaction: null, amount: 0 })} className="py-3 bg-stone-100 text-stone-600 rounded-2xl font-bold text-sm">Batal</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Transfer Stok Modal */}
+      {showTransferModal && detailTransaction && (
+        <div className="fixed inset-0 z-[80] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-2xl flex flex-col max-h-[80vh] shadow-2xl animate-in zoom-in-95">
+            <div className="p-4 border-b flex justify-between items-center">
+              <div>
+                <h3 className="text-lg font-bold text-stone-800">Transfer Stok Retur</h3>
+                <p className="text-xs text-stone-400">{detailTransaction.customerName} • #{detailTransaction.id}</p>
+              </div>
+              <button onClick={() => setShowTransferModal(false)} className="p-1.5 bg-stone-100 rounded-full text-stone-400"><X size={16} /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {transferItems.map(item => (
+                <div key={item.productId} className="bg-stone-50 p-3 rounded-xl border border-stone-100">
+                  <div className="flex justify-between items-start mb-1">
+                    <h4 className="text-sm font-bold text-stone-700">{item.productName}</h4>
+                    <span className="text-[10px] text-stone-400 font-bold">Retur: {item.maxQty}</span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <label className="text-[10px] font-bold text-stone-400 uppercase shrink-0">Transfer ke Toko:</label>
+                    <input
+                      type="text" inputMode="numeric"
+                      value={formatRupiah(item.qty)}
+                      onChange={(e) => {
+                        const val = parseRupiah(e.target.value);
+                        setTransferItems(prev => prev.map(i =>
+                          i.productId === item.productId ? { ...i, qty: Math.min(Math.max(val, 0), i.maxQty) } : i
+                        ));
+                      }}
+                      className="w-20 px-2 py-1.5 bg-white rounded-lg text-sm font-bold text-stone-800 outline-none focus:ring-2 ring-teal-400 text-center"
+                    />
+                  </div>
+                  <p className="text-xs text-teal-600 font-bold mt-1.5">
+                    Subtotal: Rp {formatRupiah(item.qty * item.harga)}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <div className="p-4 bg-stone-50 border-t rounded-b-2xl space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-sm font-bold text-stone-500">Total Nilai Transfer</span>
+                <span className="text-lg font-black text-teal-600">Rp {formatRupiah(transferItems.reduce((acc, i) => acc + i.qty * i.harga, 0))}</span>
+              </div>
+              <button
+                onClick={handleProcessTransfer}
+                className="w-full py-3 bg-teal-600 text-white rounded-xl font-bold text-sm flex items-center justify-center gap-2"
+              >
+                <ArrowLeftRight size={16} /> Proses Transfer Stok
+              </button>
             </div>
           </div>
         </div>

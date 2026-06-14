@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { db, Transaction, Expense, Customer, Product, Restock, Adjustment } from '../db';
+import { db, Transaction, Expense, Customer, Product, Restock, Adjustment, Transfer } from '../db';
 import { Search, BarChart3, TrendingUp, TrendingDown, Wallet, Package, ArrowLeftRight } from 'lucide-react';
 import { formatRupiah, getLocalDateString } from '../utils/formatters';
 
@@ -12,6 +12,7 @@ export default function LaporanPage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [restocks, setRestocks] = useState<Restock[]>([]);
   const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
+  const [transfers, setTransfers] = useState<Transfer[]>([]);
 
   const loadData = useCallback(async () => { // Wrapped in useCallback
     // Construct dates in local time to avoid timezone ambiguities
@@ -21,13 +22,14 @@ export default function LaporanPage() {
     const [yearEnd, monthEnd, dayEnd] = endDate.split('-').map(Number);
     const localEnd = new Date(yearEnd, monthEnd - 1, dayEnd, 23, 59, 59, 999);
 
-    const [tData, eData, cData, pData, rData, aData] = await Promise.all([
+    const [tData, eData, cData, pData, rData, aData, trData] = await Promise.all([
       db.transactions.where('tanggal').between(localStart, localEnd, true, true).toArray(), // Use localStart and localEnd
       db.expenses.where('tanggal').between(localStart, localEnd, true, true).toArray() as Promise<Expense[]>,
       db.customers.toArray() as Promise<Customer[]>,
       db.products.toArray() as Promise<Product[]>,
       db.restocks.where('tanggal').between(localStart, localEnd, true, true).toArray(),
-      db.adjustments.where('tanggal').between(localStart, localEnd, true, true).toArray()
+      db.adjustments.where('tanggal').between(localStart, localEnd, true, true).toArray(),
+      db.transfers.where('tanggal').between(localStart, localEnd, true, true).toArray()
     ]);
     
     const enrichedT: (Transaction & { customerName: string })[] = tData.map(t => ({
@@ -40,6 +42,7 @@ export default function LaporanPage() {
     setExpenses(eData);
     setRestocks(rData);
     setAdjustments(aData);
+    setTransfers(trData);
   }, [startDate, endDate]);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -83,13 +86,17 @@ export default function LaporanPage() {
     const tIncome = expenses.filter(e => e.tipe === 'pemasukkan').reduce((acc, e) => acc + e.nominal, 0);
     const tKulaan = restocks.reduce((acc, r) => acc + r.total, 0);
     
-    const tTransferStok = adjustments
+    const tTransferDariAdjustments = adjustments
       .filter(a => a.keterangan.includes('Transfer dari Retur ke Toko'))
       .reduce((acc, a) => {
         const product = products.find(p => p.id === a.productId);
         const productPrice = product?.hargaJual || 0;
         return acc + a.selisih * productPrice;
       }, 0);
+
+    const tTransferDariTransfers = transfers.reduce((acc, tr) => acc + tr.total, 0);
+
+    const tTransferStok = tTransferDariAdjustments + tTransferDariTransfers;
 
     const tGrossProfit = gSales - tCOGS;
     const tProfit = tGrossProfit - gReturns + tTransferStok;
@@ -106,7 +113,7 @@ export default function LaporanPage() {
       transProfit: tProfit,
       totalGrossProfit: tGrossProfit
     };
-  }, [transactions, products, expenses, restocks, adjustments]);
+  }, [transactions, products, expenses, restocks, adjustments, transfers]);
 
   return (
     <main className="flex-1 overflow-y-auto p-4 bg-stone-50 space-y-4">
