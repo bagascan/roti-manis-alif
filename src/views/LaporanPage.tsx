@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { db, Transaction, Expense, Customer, Product, Restock } from '../db';
-import { Search, BarChart3, TrendingUp, TrendingDown, Wallet, Package } from 'lucide-react';
+import { db, Transaction, Expense, Customer, Product, Restock, Adjustment } from '../db';
+import { Search, BarChart3, TrendingUp, TrendingDown, Wallet, Package, ArrowLeftRight } from 'lucide-react';
 import { formatRupiah, getLocalDateString } from '../utils/formatters';
 
 export default function LaporanPage() {
@@ -11,6 +11,7 @@ export default function LaporanPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [restocks, setRestocks] = useState<Restock[]>([]);
+  const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
 
   const loadData = useCallback(async () => { // Wrapped in useCallback
     // Construct dates in local time to avoid timezone ambiguities
@@ -20,12 +21,13 @@ export default function LaporanPage() {
     const [yearEnd, monthEnd, dayEnd] = endDate.split('-').map(Number);
     const localEnd = new Date(yearEnd, monthEnd - 1, dayEnd, 23, 59, 59, 999);
 
-    const [tData, eData, cData, pData, rData] = await Promise.all([
+    const [tData, eData, cData, pData, rData, aData] = await Promise.all([
       db.transactions.where('tanggal').between(localStart, localEnd, true, true).toArray(), // Use localStart and localEnd
       db.expenses.where('tanggal').between(localStart, localEnd, true, true).toArray() as Promise<Expense[]>,
       db.customers.toArray() as Promise<Customer[]>,
       db.products.toArray() as Promise<Product[]>,
-      db.restocks.where('tanggal').between(localStart, localEnd, true, true).toArray()
+      db.restocks.where('tanggal').between(localStart, localEnd, true, true).toArray(),
+      db.adjustments.where('tanggal').between(localStart, localEnd, true, true).toArray()
     ]);
     
     const enrichedT: (Transaction & { customerName: string })[] = tData.map(t => ({
@@ -37,6 +39,7 @@ export default function LaporanPage() {
     setProducts(pData);
     setExpenses(eData);
     setRestocks(rData);
+    setAdjustments(aData);
   }, [startDate, endDate]);
 
   useEffect(() => { loadData(); }, [loadData]);
@@ -55,7 +58,7 @@ export default function LaporanPage() {
     }
   }).sort((a, b) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime());
 
-  const { grossSales, grossReturns, totalExpenses, totalOtherIncome, totalKulaan, netProfit, transProfit, totalGrossProfit } = useMemo(() => {
+  const { grossSales, grossReturns, totalExpenses, totalOtherIncome, totalKulaan, totalTransferStok, netProfit, transProfit, totalGrossProfit } = useMemo(() => {
     let gSales = 0;
     let gReturns = 0;
     let tCOGS = 0;
@@ -80,8 +83,16 @@ export default function LaporanPage() {
     const tIncome = expenses.filter(e => e.tipe === 'pemasukkan').reduce((acc, e) => acc + e.nominal, 0);
     const tKulaan = restocks.reduce((acc, r) => acc + r.total, 0);
     
+    const tTransferStok = adjustments
+      .filter(a => a.keterangan.includes('Transfer dari Retur ke Toko'))
+      .reduce((acc, a) => {
+        const product = products.find(p => p.id === a.productId);
+        const productPrice = product?.hargaJual || 0;
+        return acc + a.selisih * productPrice;
+      }, 0);
+
     const tGrossProfit = gSales - tCOGS;
-    const tProfit = tGrossProfit - gReturns;
+    const tProfit = tGrossProfit - gReturns + tTransferStok;
     const nProfit = tProfit - tExp + tIncome;
 
     return { 
@@ -90,11 +101,12 @@ export default function LaporanPage() {
       totalExpenses: tExp, 
       totalOtherIncome: tIncome, 
       totalKulaan: tKulaan, 
+      totalTransferStok: tTransferStok,
       netProfit: nProfit,
       transProfit: tProfit,
       totalGrossProfit: tGrossProfit
     };
-  }, [transactions, products, expenses, restocks]);
+  }, [transactions, products, expenses, restocks, adjustments]);
 
   return (
     <main className="flex-1 overflow-y-auto p-4 bg-stone-50 space-y-4">
@@ -160,6 +172,13 @@ export default function LaporanPage() {
             <p className="text-[9px] text-stone-400 uppercase font-bold">Kulaan (Restok)</p>
           </div>
           <p className="text-sm font-bold text-stone-700">Rp {formatRupiah(totalKulaan)}</p>
+        </div>
+        <div className="bg-white p-3 rounded-xl shadow-sm border border-stone-100">
+          <div className="flex items-center gap-1.5 mb-1">
+            <ArrowLeftRight size={12} className="text-teal-500" />
+            <p className="text-[9px] text-stone-400 uppercase font-bold">Transfer Stok</p>
+          </div>
+          <p className="text-sm font-bold text-teal-600">Rp {formatRupiah(totalTransferStok)}</p>
         </div>
         <div className="bg-stone-800 p-3 rounded-xl shadow-sm border border-stone-700">
           <div className="flex items-center gap-1.5 mb-1">

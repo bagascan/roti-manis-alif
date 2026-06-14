@@ -168,6 +168,7 @@ export default function KasirPage({ editData, isPrinterReady, onSearchBluetooth,
     setJumlahBayar(0);
     setProductSearch('');
     setShowCartModal(false);
+    setMode('penjualan');
     setTimeout(() => searchRef.current?.focus(), 100);
   };
 
