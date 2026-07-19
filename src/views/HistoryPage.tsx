@@ -671,7 +671,6 @@ export const ReceiptModal = ({
       const W = 400;
       const PAD = 20;
       const CW = W - PAD * 2;
-      const LH = 15;
       let y = PAD;
 
       const canvas = document.createElement('canvas');
