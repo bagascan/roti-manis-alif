@@ -670,7 +670,6 @@ export const ReceiptModal = ({
     return new Promise(resolve => {
       const W = 400;
       const PAD = 20;
-      const CW = W - PAD * 2;
       let y = PAD;
 
       const canvas = document.createElement('canvas');
