@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { db, type Transaction, type Customer, type Product } from '../db';
 import { Search, History, Calendar, User, X, Edit3, Trash2, CheckCircle2, AlertCircle, Printer, Wallet, RefreshCw, ArrowLeftRight } from 'lucide-react';
 import { formatRupiah, parseRupiah } from '../utils/formatters';
@@ -36,6 +36,37 @@ export default function HistoryPage({ isPrinterReady, onPrint, onSearchBluetooth
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferItems, setTransferItems] = useState<{ productId: number; productName: string; maxQty: number; qty: number; harga: number }[]>([]);
+  const [displayLimit, setDisplayLimit] = useState(50);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  const filteredTransactions = useMemo(() =>
+    transactions.filter(t =>
+      (statusFilter === 'belum_lunas' ? t.status === 'belum_lunas' : (t.status === 'lunas' || !t.status)) &&
+      (t.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      t.items.some(item => item.productName?.toLowerCase().includes(searchTerm.toLowerCase())))
+    ),
+    [transactions, statusFilter, searchTerm]
+  );
+
+  const displayedTransactions = useMemo(() =>
+    filteredTransactions.slice(0, displayLimit),
+    [filteredTransactions, displayLimit]
+  );
+
+  useEffect(() => {
+    setDisplayLimit(50);
+  }, [statusFilter, searchTerm]);
+
+  useEffect(() => {
+    if (!loadMoreRef.current) return;
+    const observer = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && displayLimit < filteredTransactions.length) {
+        setDisplayLimit(prev => prev + 30);
+      }
+    }, { rootMargin: '200px' });
+    observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [displayLimit, filteredTransactions.length]);
 
   const showToast = (message: string, type: 'success' | 'error') => { setToast({ message, type }); setTimeout(() => setToast(null), 3000); };
 
@@ -328,14 +359,8 @@ export default function HistoryPage({ isPrinterReady, onPrint, onSearchBluetooth
         </button>
       </div>
 
-      <div className="space-y-3 pb-12">
-        {transactions
-          .filter(t =>
-            (statusFilter === 'belum_lunas' ? t.status === 'belum_lunas' : (t.status === 'lunas' || !t.status)) &&
-            (t.customerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            t.items.some(item => item.productName?.toLowerCase().includes(searchTerm.toLowerCase())))
-          )
-          .map(t => (
+      <div className="space-y-3 pb-4">
+        {displayedTransactions.map(t => (
             <div key={t.id} className="relative overflow-hidden rounded-2xl group">
               {/* Revealed Actions Background (Area tombol yang muncul saat digeser) */}
               <div className="absolute inset-y-0 right-0 flex items-center pr-3 gap-2">
@@ -408,13 +433,25 @@ export default function HistoryPage({ isPrinterReady, onPrint, onSearchBluetooth
               </div>
             </div>
           ))}
+        {filteredTransactions.length === 0 && transactions.length > 0 && (
+          <div className="text-center py-10 text-stone-300">
+            <Search size={48} className="mx-auto mb-2 opacity-20" />
+            <p className="text-sm">Tidak ditemukan.</p>
+          </div>
+        )}
         {transactions.length === 0 && (
           <div className="text-center py-10 text-stone-300">
             <History size={48} className="mx-auto mb-2 opacity-20" />
             <p className="text-sm">Belum ada riwayat transaksi.</p>
           </div>
         )}
+        {displayLimit < filteredTransactions.length && (
+          <div ref={loadMoreRef} className="flex justify-center py-4">
+            <div className="animate-spin h-6 w-6 border-2 border-stone-300 border-t-teal-600 rounded-full" />
+          </div>
+        )}
       </div>
+      <div className="h-16" />
 
       {/* Detail Transaction Modal */}
       {detailTransaction && (
@@ -615,6 +652,7 @@ export const ReceiptModal = ({
   onConnect?: () => Promise<boolean>;
 }) => {
   const receiptRef = useRef<HTMLDivElement>(null);
+  const [isSharing, setIsSharing] = useState(false);
 
   const formatRupiah = (value: number | string) => {
     if (value === null || value === undefined || value === '') return '';
@@ -629,52 +667,45 @@ export const ReceiptModal = ({
   const totalReturns = returnItems.reduce((acc, item) => acc + Math.abs(item.subtotal), 0);
 
   const handleShareImage = async () => {
-    if (!receiptRef.current) return;
-    
-    let receiptElement: HTMLDivElement | null = null;
-    let originalOverflow = '';
-    let originalMaxHeight = '';
+    if (!receiptRef.current || isSharing) return;
+    setIsSharing(true);
+
+    const el = receiptRef.current;
+    const origOverflow = el.style.overflow;
+    const origMaxH = el.style.maxHeight;
 
     try {
-      receiptElement = receiptRef.current;
-      originalOverflow = receiptElement.style.overflow;
-      originalMaxHeight = receiptElement.style.maxHeight;
+      el.style.overflow = 'visible';
+      el.style.maxHeight = 'none';
 
-      // Temporarily adjust styles to ensure full content is captured
-      receiptElement.style.overflow = 'visible';
-      receiptElement.style.maxHeight = 'none';
-
-      // Generate Canvas from the receipt element using html2canvas
-      const canvas = await html2canvas(receiptElement, {
+      const canvas = await html2canvas(el, {
         backgroundColor: '#ffffff',
+        scale: 2,
+        useCORS: true,
+        logging: false,
       });
-      const dataUrl = canvas.toDataURL('image/png');
-      
-      const blob = await (await fetch(dataUrl)).blob();
+
+      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
+
+      if (!blob) return;
+
       const file = new File([blob], `Nota-${transaction.id}.png`, { type: 'image/png' });
 
-      // Use Web Share API (works on most mobile browsers)
-      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          files: [file],
-          title: `Nota Roti Manis Arif #${transaction.id}`,
-        });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: `Nota Roti Manis Arif #${transaction.id}` });
       } else {
-        // Fallback: download the image if sharing is not supported
         const link = document.createElement('a');
         link.download = `Nota-${transaction.id}.png`;
-        link.href = dataUrl;
+        link.href = URL.createObjectURL(blob);
         link.click();
+        URL.revokeObjectURL(link.href);
       }
     } catch (error) {
       console.error('Error sharing receipt image:', error);
-    }
-    finally {
-      if (receiptElement) {
-        // Revert styles back
-        receiptElement.style.overflow = originalOverflow;
-        receiptElement.style.maxHeight = originalMaxHeight;
-      }
+    } finally {
+      el.style.overflow = origOverflow;
+      el.style.maxHeight = origMaxH;
+      setIsSharing(false);
     }
   };
 
@@ -792,10 +823,15 @@ export const ReceiptModal = ({
             </button>
           )}
           <button 
-            onClick={handleShareImage} 
-            className="w-full py-3 bg-green-500 text-white rounded-xl font-bold text-base flex items-center justify-center gap-2 active:scale-95 transition-transform"
+            onClick={handleShareImage}
+            disabled={isSharing}
+            className={`w-full py-3 rounded-xl font-bold text-base flex items-center justify-center gap-2 active:scale-95 transition-all ${isSharing ? 'bg-stone-400 text-white cursor-not-allowed' : 'bg-green-500 text-white'}`}
           >
-            <img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" alt="WhatsApp" className="h-4 w-4" /> Bagikan ke WhatsApp
+            {isSharing ? (
+              <><RefreshCw size={16} className="animate-spin" /> Memproses...</>
+            ) : (
+              <><img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" alt="WhatsApp" className="h-4 w-4" /> Bagikan ke WhatsApp</>
+            )}
           </button>
         </div>
       </div>

@@ -7,6 +7,11 @@ export default function LaporanPage() {
   const [startDate, setStartDate] = useState(getLocalDateString(new Date()));
   const [endDate, setEndDate] = useState(getLocalDateString(new Date()));
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchTerm), 300);
+    return () => clearTimeout(t);
+  }, [searchTerm]);
   const [transactions, setTransactions] = useState<(Transaction & { customerName: string })[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
@@ -47,19 +52,21 @@ export default function LaporanPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const filteredActivities = [
-    ...transactions.map(t => ({ ...t, activityType: 'transaction' as const })),
-    ...expenses.map(e => ({ ...e, activityType: 'expense' as const }))
-  ].filter(item => {
-    const search = searchTerm.toLowerCase();
-    if (item.activityType === 'transaction') {
-      const t = item as Transaction & { customerName: string };
-      return t.customerName.toLowerCase().includes(search) || t.id?.toString().includes(search);
-    } else {
-      const e = item as Expense;
-      return e.keterangan.toLowerCase().includes(search) || e.kategori.toLowerCase().includes(search);
-    }
-  }).sort((a, b) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime());
+  const filteredActivities = useMemo(() => {
+    const search = debouncedSearch.toLowerCase();
+    return [
+      ...transactions.map(t => ({ ...t, activityType: 'transaction' as const })),
+      ...expenses.map(e => ({ ...e, activityType: 'expense' as const }))
+    ].filter(item => {
+      if (item.activityType === 'transaction') {
+        const t = item as Transaction & { customerName: string };
+        return t.customerName.toLowerCase().includes(search) || t.id?.toString().includes(search);
+      } else {
+        const e = item as Expense;
+        return e.keterangan.toLowerCase().includes(search) || e.kategori.toLowerCase().includes(search);
+      }
+    }).sort((a, b) => new Date(b.tanggal).getTime() - new Date(a.tanggal).getTime());
+  }, [transactions, expenses, debouncedSearch]);
 
   const { grossSales, grossReturns, totalExpenses, totalOtherIncome, totalKulaan, totalTransferStok, netProfit, transProfit, totalGrossProfit } = useMemo(() => {
     let gSales = 0;
