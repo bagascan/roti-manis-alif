@@ -114,7 +114,14 @@ export default function SettingsPage({ isPrinterReady, printerAddress, onSearchB
     const reader = new FileReader();
     reader.onload = async (event) => {
       try {
-        const data = JSON.parse(event.target?.result as string) as Record<string, unknown[]>;
+        const raw = JSON.parse(event.target?.result as string) as Record<string, unknown[]>;
+        const data: Record<string, unknown[]> = {};
+        for (const [tableName, rows] of Object.entries(raw)) {
+          data[tableName] = (rows as Record<string, unknown>[]).map(row => {
+            if (typeof row.tanggal === 'string') row.tanggal = new Date(row.tanggal);
+            return row;
+          });
+        }
         await db.transaction('rw', db.tables, async () => {
           for (const tableName of Object.keys(data)) {
             await db.table(tableName).clear();
