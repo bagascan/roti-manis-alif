@@ -4,8 +4,11 @@ import { Search, BarChart3, TrendingUp, TrendingDown, Wallet, Package, ArrowLeft
 import { formatRupiah, getLocalDateString } from '../utils/formatters';
 
 export default function LaporanPage() {
-  const [startDate, setStartDate] = useState(getLocalDateString(new Date()));
-  const [endDate, setEndDate] = useState(getLocalDateString(new Date()));
+  const now = new Date();
+  const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const [startDate, setStartDate] = useState(getLocalDateString(firstOfMonth));
+  const [endDate, setEndDate] = useState(getLocalDateString(now));
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [activityLimit, setActivityLimit] = useState(30);
@@ -49,6 +52,7 @@ export default function LaporanPage() {
       setRestocks(rData);
       setAdjustments(aData);
       setTransfers(trData);
+      setLoading(false);
     } catch (err) {
       console.error('LaporanPage: gagal muat data penuh, fallback ke data dasar', err);
       try {
@@ -67,8 +71,10 @@ export default function LaporanPage() {
         setProducts(pData);
         setExpenses(eData);
         setRestocks(rData);
+        setLoading(false);
       } catch (err2) {
         console.error('LaporanPage: fallback pun gagal', err2);
+        setLoading(false);
       }
     }
   }, [startDate, endDate]);
@@ -149,6 +155,17 @@ export default function LaporanPage() {
       totalGrossProfit: tGrossProfit
     };
   }, [transactions, productMap, expenses, restocks, adjustments, transfers]);
+
+  if (loading) {
+    return (
+      <main className="flex-1 overflow-y-auto p-4 bg-stone-50 flex items-center justify-center">
+        <div className="text-center text-stone-400">
+          <div className="animate-spin w-8 h-8 border-4 border-stone-200 border-t-teal-600 rounded-full mx-auto mb-3" />
+          <p className="text-sm">Memuat laporan...</p>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="flex-1 overflow-y-auto p-4 bg-stone-50 space-y-4">
