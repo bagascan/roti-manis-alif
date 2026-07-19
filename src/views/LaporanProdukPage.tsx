@@ -179,14 +179,14 @@ export default function LaporanProdukPage() {
                 <div className="p-1.5 bg-green-50 text-green-600 rounded-lg"><TrendingUp size={14}/></div>
                 <div>
                   <p className="text-[9px] text-stone-400 uppercase font-bold">Terjual</p>
-                  <p className="text-xs font-bold text-stone-700">{s.terjual} {s.satuan} <span className="text-[10px] text-stone-400 font-medium">(Rp {formatRupiah(s.nilaiTerjual)})</span></p>
+                  <p className="text-xs font-bold text-stone-700">{(s.terjual).toLocaleString('id-ID')} {s.satuan} <span className="text-[10px] text-stone-400 font-medium">(Rp {formatRupiah(s.nilaiTerjual)})</span></p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <div className="p-1.5 bg-rose-50 text-rose-600 rounded-lg"><RotateCcw size={14}/></div>
                 <div>
                   <p className="text-[9px] text-stone-400 uppercase font-bold">Retur</p>
-                  <p className="text-xs font-bold text-stone-700">{s.retur} {s.satuan} <span className="text-[10px] text-stone-400 font-medium">(Rp {formatRupiah(s.nilaiRetur)})</span></p>
+                  <p className="text-xs font-bold text-stone-700">{(s.retur).toLocaleString('id-ID')} {s.satuan} <span className="text-[10px] text-stone-400 font-medium">(Rp {formatRupiah(s.nilaiRetur)})</span></p>
                 </div>
               </div>
             </div>
