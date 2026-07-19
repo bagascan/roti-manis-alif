@@ -4,10 +4,8 @@ import { Search, BarChart3, TrendingUp, TrendingDown, Wallet, Package, ArrowLeft
 import { formatRupiah, getLocalDateString } from '../utils/formatters';
 
 export default function LaporanPage() {
-  const now = new Date();
-  const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-  const [startDate, setStartDate] = useState(getLocalDateString(firstOfMonth));
-  const [endDate, setEndDate] = useState(getLocalDateString(now));
+  const [startDate, setStartDate] = useState(getLocalDateString(new Date()));
+  const [endDate, setEndDate] = useState(getLocalDateString(new Date()));
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
