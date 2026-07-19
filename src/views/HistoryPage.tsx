@@ -681,98 +681,107 @@ export const ReceiptModal = ({
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, W, 2000);
 
-      const t = (text: string, x: number, yp: number, align: CanvasTextAlign = 'left', bold = false, color = '#000', size = 11) => {
-        ctx.font = `${bold ? 'bold ' : ''}${size}px monospace`;
+      const t = (text: string, x: number, yp: number, align: CanvasTextAlign = 'left', bold = false, color = '#000', size = 12) => {
+        ctx.font = `${bold ? 'bold ' : ''}${size}px 'Courier New', monospace`;
         ctx.textAlign = align;
         ctx.fillStyle = color;
         ctx.fillText(text, x, yp);
       };
-      const line = (yp: number) => {
-        ctx.fillStyle = '#333';
-        ctx.fillRect(PAD, yp, CW, 1);
+      const sep = (yp: number) => {
+        ctx.fillStyle = '#000';
+        ctx.font = `12px 'Courier New', monospace`;
+        ctx.textAlign = 'left';
+        ctx.fillText('---------------------------------', PAD, yp);
       };
-      const center = (text: string, yp: number, bold = false, color = '#000', size = 11) => t(text, W / 2, yp, 'center', bold, color, size);
+      const center = (text: string, yp: number, bold = false, color = '#000', size = 12) => t(text, W / 2, yp, 'center', bold, color, size);
+      const row = (left: string, right: string, yp: number, bold = false, color = '#000', leftColor = color) => {
+        t(left, PAD, yp, 'left', bold, leftColor, 12);
+        t(right, W - PAD, yp, 'right', bold, color, 12);
+      };
 
       const logoData = localStorage.getItem('app_logo');
       const drawContent = (img: HTMLImageElement | null) => {
-        y = PAD;
+        y = PAD + 12;
 
         if (img && img.complete && img.naturalWidth > 0) {
-          const logoSize = 64;
-          ctx.drawImage(img, W / 2 - logoSize / 2, y, logoSize, logoSize);
-          y += logoSize + 8;
+          const logoSize = 96;
+          ctx.drawImage(img, W / 2 - logoSize / 2, y - 12, logoSize, logoSize);
+          y += logoSize + 4;
         }
-        center('ROTI MANIS ARIF', y, true, '#000', 15);
-        y += 18;
+        center('ROTI MANIS ARIF', y, true, '#000', 16);
+        y += 20;
         const addr = localStorage.getItem('store_address') || '';
-        if (addr) { center(addr, y, false, '#555', 9); y += 13; }
+        if (addr) { center(addr, y, false, '#57534f', 10); y += 14; }
         const phone = localStorage.getItem('store_phone') || '';
-        if (phone) { center(phone, y, false, '#555', 9); y += 13; }
+        if (phone) { center(phone, y, false, '#57534f', 10); y += 14; }
         y += 4;
 
-        line(y); y += 8;
-        t(`Tanggal: ${new Date(transaction.tanggal).toLocaleString('id-ID')}`, PAD, y, 'left', false, '#333', 9);
-        y += 13;
-        t(`Pelanggan: ${transaction.customerName || 'Umum'}`, PAD, y, 'left', false, '#333', 9);
-        y += 8;
-        line(y); y += 8;
+        sep(y); y += 16;
+        t(`Tanggal: ${new Date(transaction.tanggal).toLocaleString('id-ID')}`, PAD, y, 'left', false, '#57534f', 10);
+        y += 14;
+        t(`Pelanggan: ${transaction.customerName || 'Umum'}`, PAD, y, 'left', false, '#57534f', 10);
+        y += 4;
+        sep(y); y += 12;
 
-        const drawItems = (items: typeof salesItems, label: string, color: string) => {
-          if (items.length === 0) return;
-          center(label, y, true, color, 10);
-          y += 14;
-          items.forEach(item => {
+        if (salesItems.length > 0) {
+          center('PEMBELIAN', y, true, '#000', 12);
+          y += 18;
+          salesItems.forEach(item => {
             const name = item.productName || '';
-            const qtyStr = `${item.qty} ${item.unit === 'satuan' ? 'Pack' : 'Pcs'} x ${formatRupiah(item.harga)}`;
-            const sub = Math.abs(item.subtotal);
-            t(name, PAD, y, 'left', false, color, 10);
-            t(`Rp ${formatRupiah(sub)}`, W - PAD, y, 'right', true, color, 10);
-            y += 12;
-            t(qtyStr, PAD, y, 'left', false, '#888', 9);
+            const sub = formatRupiah(Math.abs(item.subtotal));
+            row(name, `Rp ${sub}`, y, true, '#000');
             y += 14;
+            const subtext = `${item.qty} ${item.unit === 'satuan' ? 'Pack' : 'Pcs'} x ${formatRupiah(item.harga)}`;
+            t(subtext, PAD, y, 'left', false, '#78716c', 10);
+            y += 16;
           });
-        };
+        }
 
-        drawItems(salesItems, 'PEMBELIAN', '#000');
-        if (salesItems.length > 0 && returnItems.length > 0) { line(y); y += 8; }
-        drawItems(returnItems, 'RETUR', '#c00');
+        if (returnItems.length > 0) {
+          if (salesItems.length > 0) { sep(y); y += 12; }
+          center('RETUR', y, true, '#e11d48', 12);
+          y += 18;
+          returnItems.forEach(item => {
+            const name = item.productName || '';
+            const sub = formatRupiah(Math.abs(item.subtotal));
+            row(name, `-Rp ${sub}`, y, true, '#e11d48', '#e11d48');
+            y += 14;
+            const subtext = `${item.qty} ${item.unit === 'satuan' ? 'Pack' : 'Pcs'} x ${formatRupiah(item.harga)}`;
+            t(subtext, PAD, y, 'left', false, '#e11d48', 10);
+            y += 16;
+          });
+        }
 
-        line(y); y += 8;
+        sep(y); y += 12;
 
         if (totalSales > 0 && totalReturns > 0) {
-          t('TOT. PEMBELIAN:', PAD, y, 'left', false, '#333', 10);
-          t(`Rp ${formatRupiah(totalSales)}`, W - PAD, y, 'right', false, '#000', 10);
+          row('TOT. PEMBELIAN:', `Rp ${formatRupiah(totalSales)}`, y, false, '#000');
           y += 14;
-          t('TOT. RETUR:', PAD, y, 'left', false, '#333', 10);
-          t(`-Rp ${formatRupiah(totalReturns)}`, W - PAD, y, 'right', false, '#c00', 10);
+          row('TOT. RETUR:', `-Rp ${formatRupiah(totalReturns)}`, y, false, '#e11d48', '#e11d48');
           y += 14;
         }
-        t('TOTAL:', PAD, y, 'left', true, '#000', 12);
-        t(`Rp ${formatRupiah(transaction.total)}`, W - PAD, y, 'right', true, '#000', 12);
+        row('TOTAL:', `Rp ${formatRupiah(transaction.total)}`, y, true, '#000');
         y += 16;
-        t('BAYAR:', PAD, y, 'left', false, '#333', 10);
-        t(`Rp ${formatRupiah(transaction.bayar || 0)}`, W - PAD, y, 'right', false, '#000', 10);
+        row('BAYAR:', `Rp ${formatRupiah(transaction.bayar || 0)}`, y, false, '#000');
         y += 14;
 
         if (transaction.status === 'belum_lunas') {
-          t('KURANG:', PAD, y, 'left', true, '#c00', 10);
-          t(`-Rp ${formatRupiah(transaction.total - (transaction.bayar || 0))}`, W - PAD, y, 'right', true, '#c00', 10);
+          row('KURANG:', `- Rp ${formatRupiah(transaction.total - (transaction.bayar || 0))}`, y, true, '#e11d48', '#e11d48');
           y += 14;
         }
         if ((transaction.bayar || 0) > transaction.total) {
-          t('KEMBALI:', PAD, y, 'left', false, '#333', 10);
-          t(`Rp ${formatRupiah((transaction.bayar || 0) - transaction.total)}`, W - PAD, y, 'right', false, '#000', 10);
+          row('KEMBALI:', `Rp ${formatRupiah((transaction.bayar || 0) - transaction.total)}`, y, false, '#000');
           y += 14;
         }
 
-        y += 8;
+        y += 12;
         const footer = localStorage.getItem('receipt_footer') || 'Terima Kasih Atas\nKunjungan Anda';
         footer.split('\n').forEach(l => {
-          center(l, y, false, '#555', 9);
-          y += 13;
+          center(l, y, false, '#57534f', 10);
+          y += 14;
         });
 
-        y += 16;
+        y += 12;
         canvas.toBlob(blob => resolve(blob), 'image/png');
       };
 
