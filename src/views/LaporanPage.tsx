@@ -21,35 +21,56 @@ export default function LaporanPage() {
   const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
   const [transfers, setTransfers] = useState<Transfer[]>([]);
 
-  const loadData = useCallback(async () => { // Wrapped in useCallback
-    // Construct dates in local time to avoid timezone ambiguities
+  const loadData = useCallback(async () => {
     const [yearStart, monthStart, dayStart] = startDate.split('-').map(Number);
     const localStart = new Date(yearStart, monthStart - 1, dayStart, 0, 0, 0, 0);
-
     const [yearEnd, monthEnd, dayEnd] = endDate.split('-').map(Number);
     const localEnd = new Date(yearEnd, monthEnd - 1, dayEnd, 23, 59, 59, 999);
 
-    const [tData, eData, cData, pData, rData, aData, trData] = await Promise.all([
-      db.transactions.where('tanggal').between(localStart, localEnd, true, true).toArray(), // Use localStart and localEnd
-      db.expenses.where('tanggal').between(localStart, localEnd, true, true).toArray() as Promise<Expense[]>,
-      db.customers.toArray() as Promise<Customer[]>,
-      db.products.toArray() as Promise<Product[]>,
-      db.restocks.where('tanggal').between(localStart, localEnd, true, true).toArray(),
-      db.adjustments.where('tanggal').between(localStart, localEnd, true, true).toArray(),
-      db.transfers.where('tanggal').between(localStart, localEnd, true, true).toArray()
-    ]);
-    
-    const enrichedT: (Transaction & { customerName: string })[] = tData.map(t => ({
-      ...t,
-      customerName: t.customerId ? (cData.find(c => c.id === t.customerId)?.nama || 'Umum') : 'Umum'
-    }));
+    try {
+      const [tData, eData, cData, pData, rData, aData, trData] = await Promise.all([
+        db.transactions.where('tanggal').between(localStart, localEnd, true, true).toArray(),
+        db.expenses.where('tanggal').between(localStart, localEnd, true, true).toArray() as Promise<Expense[]>,
+        db.customers.toArray() as Promise<Customer[]>,
+        db.products.toArray() as Promise<Product[]>,
+        db.restocks.where('tanggal').between(localStart, localEnd, true, true).toArray(),
+        db.adjustments.where('tanggal').between(localStart, localEnd, true, true).toArray(),
+        db.transfers.where('tanggal').between(localStart, localEnd, true, true).toArray()
+      ]);
+      
+      const enrichedT: (Transaction & { customerName: string })[] = tData.map(t => ({
+        ...t,
+        customerName: t.customerId ? (cData.find(c => c.id === t.customerId)?.nama || 'Umum') : 'Umum'
+      }));
 
-    setTransactions(enrichedT);
-    setProducts(pData);
-    setExpenses(eData);
-    setRestocks(rData);
-    setAdjustments(aData);
-    setTransfers(trData);
+      setTransactions(enrichedT);
+      setProducts(pData);
+      setExpenses(eData);
+      setRestocks(rData);
+      setAdjustments(aData);
+      setTransfers(trData);
+    } catch (err) {
+      console.error('LaporanPage: gagal muat data penuh, fallback ke data dasar', err);
+      try {
+        const [tData, eData, cData, pData, rData] = await Promise.all([
+          db.transactions.where('tanggal').between(localStart, localEnd, true, true).toArray(),
+          db.expenses.where('tanggal').between(localStart, localEnd, true, true).toArray() as Promise<Expense[]>,
+          db.customers.toArray() as Promise<Customer[]>,
+          db.products.toArray() as Promise<Product[]>,
+          db.restocks.where('tanggal').between(localStart, localEnd, true, true).toArray(),
+        ]);
+        const enrichedT = tData.map(t => ({
+          ...t,
+          customerName: t.customerId ? (cData.find(c => c.id === t.customerId)?.nama || 'Umum') : 'Umum'
+        }));
+        setTransactions(enrichedT);
+        setProducts(pData);
+        setExpenses(eData);
+        setRestocks(rData);
+      } catch (err2) {
+        console.error('LaporanPage: fallback pun gagal', err2);
+      }
+    }
   }, [startDate, endDate]);
 
   useEffect(() => { loadData(); }, [loadData]);
