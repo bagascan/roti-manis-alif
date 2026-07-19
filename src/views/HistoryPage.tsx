@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { db, type Transaction, type Customer, type Product } from '../db';
 import { Search, History, Calendar, User, X, Edit3, Trash2, CheckCircle2, AlertCircle, Printer, Wallet, RefreshCw, ArrowLeftRight } from 'lucide-react';
 import { formatRupiah, parseRupiah } from '../utils/formatters';
-import html2canvas from 'html2canvas';
+
 
 // Define enriched types for display
 type EnrichedTransactionItem = Transaction['items'][number] & { productName?: string };
@@ -666,27 +666,138 @@ export const ReceiptModal = ({
   const totalSales = salesItems.reduce((acc, item) => acc + item.subtotal, 0);
   const totalReturns = returnItems.reduce((acc, item) => acc + Math.abs(item.subtotal), 0);
 
+  const renderReceiptCanvas = (): Promise<Blob | null> => {
+    return new Promise(resolve => {
+      const W = 400;
+      const PAD = 20;
+      const CW = W - PAD * 2;
+      const LH = 15;
+      let y = PAD;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = W * 2;
+      canvas.height = 2000;
+      const ctx = canvas.getContext('2d')!;
+      ctx.scale(2, 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, W, 2000);
+
+      const t = (text: string, x: number, yp: number, align: CanvasTextAlign = 'left', bold = false, color = '#000', size = 11) => {
+        ctx.font = `${bold ? 'bold ' : ''}${size}px monospace`;
+        ctx.textAlign = align;
+        ctx.fillStyle = color;
+        ctx.fillText(text, x, yp);
+      };
+      const line = (yp: number) => {
+        ctx.fillStyle = '#333';
+        ctx.fillRect(PAD, yp, CW, 1);
+      };
+      const center = (text: string, yp: number, bold = false, color = '#000', size = 11) => t(text, W / 2, yp, 'center', bold, color, size);
+
+      const logoData = localStorage.getItem('app_logo');
+      const drawContent = (img: HTMLImageElement | null) => {
+        y = PAD;
+
+        if (img && img.complete && img.naturalWidth > 0) {
+          const logoSize = 64;
+          ctx.drawImage(img, W / 2 - logoSize / 2, y, logoSize, logoSize);
+          y += logoSize + 8;
+        }
+        center('ROTI MANIS ARIF', y, true, '#000', 15);
+        y += 18;
+        const addr = localStorage.getItem('store_address') || '';
+        if (addr) { center(addr, y, false, '#555', 9); y += 13; }
+        const phone = localStorage.getItem('store_phone') || '';
+        if (phone) { center(phone, y, false, '#555', 9); y += 13; }
+        y += 4;
+
+        line(y); y += 8;
+        t(`Tanggal: ${new Date(transaction.tanggal).toLocaleString('id-ID')}`, PAD, y, 'left', false, '#333', 9);
+        y += 13;
+        t(`Pelanggan: ${transaction.customerName || 'Umum'}`, PAD, y, 'left', false, '#333', 9);
+        y += 8;
+        line(y); y += 8;
+
+        const drawItems = (items: typeof salesItems, label: string, color: string) => {
+          if (items.length === 0) return;
+          center(label, y, true, color, 10);
+          y += 14;
+          items.forEach(item => {
+            const name = item.productName || '';
+            const qtyStr = `${item.qty} ${item.unit === 'satuan' ? 'Pack' : 'Pcs'} x ${formatRupiah(item.harga)}`;
+            const sub = Math.abs(item.subtotal);
+            t(name, PAD, y, 'left', false, color, 10);
+            t(`Rp ${formatRupiah(sub)}`, W - PAD, y, 'right', true, color, 10);
+            y += 12;
+            t(qtyStr, PAD, y, 'left', false, '#888', 9);
+            y += 14;
+          });
+        };
+
+        drawItems(salesItems, 'PEMBELIAN', '#000');
+        if (salesItems.length > 0 && returnItems.length > 0) { line(y); y += 8; }
+        drawItems(returnItems, 'RETUR', '#c00');
+
+        line(y); y += 8;
+
+        if (totalSales > 0 && totalReturns > 0) {
+          t('TOT. PEMBELIAN:', PAD, y, 'left', false, '#333', 10);
+          t(`Rp ${formatRupiah(totalSales)}`, W - PAD, y, 'right', false, '#000', 10);
+          y += 14;
+          t('TOT. RETUR:', PAD, y, 'left', false, '#333', 10);
+          t(`-Rp ${formatRupiah(totalReturns)}`, W - PAD, y, 'right', false, '#c00', 10);
+          y += 14;
+        }
+        t('TOTAL:', PAD, y, 'left', true, '#000', 12);
+        t(`Rp ${formatRupiah(transaction.total)}`, W - PAD, y, 'right', true, '#000', 12);
+        y += 16;
+        t('BAYAR:', PAD, y, 'left', false, '#333', 10);
+        t(`Rp ${formatRupiah(transaction.bayar || 0)}`, W - PAD, y, 'right', false, '#000', 10);
+        y += 14;
+
+        if (transaction.status === 'belum_lunas') {
+          t('KURANG:', PAD, y, 'left', true, '#c00', 10);
+          t(`-Rp ${formatRupiah(transaction.total - (transaction.bayar || 0))}`, W - PAD, y, 'right', true, '#c00', 10);
+          y += 14;
+        }
+        if ((transaction.bayar || 0) > transaction.total) {
+          t('KEMBALI:', PAD, y, 'left', false, '#333', 10);
+          t(`Rp ${formatRupiah((transaction.bayar || 0) - transaction.total)}`, W - PAD, y, 'right', false, '#000', 10);
+          y += 14;
+        }
+
+        y += 8;
+        const footer = localStorage.getItem('receipt_footer') || 'Terima Kasih Atas\nKunjungan Anda';
+        footer.split('\n').forEach(l => {
+          center(l, y, false, '#555', 9);
+          y += 13;
+        });
+
+        y += 16;
+        canvas.height = Math.ceil(y * 2);
+        canvas.toBlob(blob => resolve(blob), 'image/png');
+      };
+
+      if (logoData) {
+        const img = new Image();
+        img.onload = () => drawContent(img);
+        img.onerror = () => drawContent(null);
+        img.src = logoData;
+      } else {
+        const img = new Image();
+        img.onload = () => drawContent(img);
+        img.onerror = () => drawContent(null);
+        img.src = '/logo.jpeg';
+      }
+    });
+  };
+
   const handleShareImage = async () => {
-    if (!receiptRef.current || isSharing) return;
+    if (isSharing) return;
     setIsSharing(true);
 
-    const el = receiptRef.current;
-    const origOverflow = el.style.overflow;
-    const origMaxH = el.style.maxHeight;
-
     try {
-      el.style.overflow = 'visible';
-      el.style.maxHeight = 'none';
-
-      const canvas = await html2canvas(el, {
-        backgroundColor: '#ffffff',
-        scale: 2,
-        useCORS: true,
-        logging: false,
-      });
-
-      const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/png'));
-
+      const blob = await renderReceiptCanvas();
       if (!blob) return;
 
       const file = new File([blob], `Nota-${transaction.id}.png`, { type: 'image/png' });
@@ -703,8 +814,6 @@ export const ReceiptModal = ({
     } catch (error) {
       console.error('Error sharing receipt image:', error);
     } finally {
-      el.style.overflow = origOverflow;
-      el.style.maxHeight = origMaxH;
       setIsSharing(false);
     }
   };
