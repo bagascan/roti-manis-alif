@@ -680,7 +680,7 @@ export const ReceiptModal = ({
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, W, 2000);
 
-      const t = (text: string, x: number, yp: number, align: CanvasTextAlign = 'left', bold = false, color = '#000', size = 12) => {
+      const t = (text: string, x: number, yp: number, align: CanvasTextAlign = 'left', bold = false, color = '#000', size = 13) => {
         ctx.font = `${bold ? 'bold ' : ''}${size}px 'Courier New', monospace`;
         ctx.textAlign = align;
         ctx.fillStyle = color;
@@ -688,9 +688,9 @@ export const ReceiptModal = ({
       };
       const sep = (yp: number) => {
         ctx.fillStyle = '#000';
-        ctx.font = `12px 'Courier New', monospace`;
+        ctx.font = `13px 'Courier New', monospace`;
         ctx.textAlign = 'left';
-        ctx.fillText('---------------------------------', PAD, yp);
+        ctx.fillText('----------------------------------', PAD, yp);
       };
       const center = (text: string, yp: number, bold = false, color = '#000', size = 12) => t(text, W / 2, yp, 'center', bold, color, size);
       const row = (left: string, right: string, yp: number, bold = false, color = '#000', leftColor = color) => {
@@ -707,77 +707,77 @@ export const ReceiptModal = ({
           ctx.drawImage(img, W / 2 - logoSize / 2, y - 12, logoSize, logoSize);
           y += logoSize + 4;
         }
-        center('ROTI MANIS ARIF', y, true, '#000', 16);
-        y += 20;
+        center('ROTI MANIS ARIF', y, true, '#000', 18);
+        y += 22;
         const addr = localStorage.getItem('store_address') || '';
-        if (addr) { center(addr, y, false, '#57534f', 10); y += 14; }
+        if (addr) { center(addr, y, false, '#57534f', 11); y += 15; }
         const phone = localStorage.getItem('store_phone') || '';
-        if (phone) { center(phone, y, false, '#57534f', 10); y += 14; }
+        if (phone) { center(phone, y, false, '#57534f', 11); y += 15; }
         y += 4;
 
-        sep(y); y += 16;
-        t(`Tanggal: ${new Date(transaction.tanggal).toLocaleString('id-ID')}`, PAD, y, 'left', false, '#57534f', 10);
-        y += 14;
-        t(`Pelanggan: ${transaction.customerName || 'Umum'}`, PAD, y, 'left', false, '#57534f', 10);
-        y += 4;
-        sep(y); y += 12;
+        sep(y); y += 18;
+        t(`Tanggal: ${new Date(transaction.tanggal).toLocaleString('id-ID')}`, PAD, y, 'left', false, '#57534f', 11);
+        y += 15;
+        t(`Pelanggan: ${transaction.customerName || 'Umum'}`, PAD, y, 'left', false, '#57534f', 11);
+        y += 6;
+        sep(y); y += 14;
 
         if (salesItems.length > 0) {
-          center('PEMBELIAN', y, true, '#000', 12);
-          y += 18;
+          center('PEMBELIAN', y, true, '#000', 13);
+          y += 20;
           salesItems.forEach(item => {
             const name = item.productName || '';
             const sub = formatRupiah(Math.abs(item.subtotal));
             row(name, `Rp ${sub}`, y, true, '#000');
-            y += 14;
+            y += 15;
             const subtext = `${item.qty} ${item.unit === 'satuan' ? 'Pack' : 'Pcs'} x ${formatRupiah(item.harga)}`;
-            t(subtext, PAD, y, 'left', false, '#78716c', 10);
-            y += 16;
+            t(subtext, PAD, y, 'left', false, '#78716c', 11);
+            y += 18;
           });
         }
 
         if (returnItems.length > 0) {
-          if (salesItems.length > 0) { sep(y); y += 12; }
-          center('RETUR', y, true, '#e11d48', 12);
-          y += 18;
+          if (salesItems.length > 0) { sep(y); y += 14; }
+          center('RETUR', y, true, '#e11d48', 13);
+          y += 20;
           returnItems.forEach(item => {
             const name = item.productName || '';
             const sub = formatRupiah(Math.abs(item.subtotal));
             row(name, `-Rp ${sub}`, y, true, '#e11d48', '#e11d48');
-            y += 14;
+            y += 15;
             const subtext = `${item.qty} ${item.unit === 'satuan' ? 'Pack' : 'Pcs'} x ${formatRupiah(item.harga)}`;
-            t(subtext, PAD, y, 'left', false, '#e11d48', 10);
-            y += 16;
+            t(subtext, PAD, y, 'left', false, '#e11d48', 11);
+            y += 18;
           });
         }
 
-        sep(y); y += 12;
+        sep(y); y += 14;
 
         if (totalSales > 0 && totalReturns > 0) {
           row('TOT. PEMBELIAN:', `Rp ${formatRupiah(totalSales)}`, y, false, '#000');
-          y += 14;
+          y += 16;
           row('TOT. RETUR:', `-Rp ${formatRupiah(totalReturns)}`, y, false, '#e11d48', '#e11d48');
-          y += 14;
+          y += 16;
         }
         row('TOTAL:', `Rp ${formatRupiah(transaction.total)}`, y, true, '#000');
-        y += 16;
+        y += 18;
         row('BAYAR:', `Rp ${formatRupiah(transaction.bayar || 0)}`, y, false, '#000');
-        y += 14;
+        y += 16;
 
         if (transaction.status === 'belum_lunas') {
           row('KURANG:', `- Rp ${formatRupiah(transaction.total - (transaction.bayar || 0))}`, y, true, '#e11d48', '#e11d48');
-          y += 14;
+          y += 16;
         }
         if ((transaction.bayar || 0) > transaction.total) {
           row('KEMBALI:', `Rp ${formatRupiah((transaction.bayar || 0) - transaction.total)}`, y, false, '#000');
-          y += 14;
+          y += 16;
         }
 
         y += 12;
         const footer = localStorage.getItem('receipt_footer') || 'Terima Kasih Atas\nKunjungan Anda';
         footer.split('\n').forEach(l => {
-          center(l, y, false, '#57534f', 10);
-          y += 14;
+          center(l, y, false, '#57534f', 11);
+          y += 15;
         });
 
         y += 12;
