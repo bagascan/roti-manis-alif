@@ -781,7 +781,13 @@ export const ReceiptModal = ({
         });
 
         y += 12;
-        canvas.toBlob(blob => resolve(blob), 'image/png');
+        const finalH = Math.ceil(y);
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = W * 2;
+        tempCanvas.height = finalH * 2;
+        const tempCtx = tempCanvas.getContext('2d', { alpha: false })!;
+        tempCtx.drawImage(canvas, 0, 0);
+        tempCanvas.toBlob(blob => resolve(blob), 'image/png');
       };
 
       if (logoData) {
