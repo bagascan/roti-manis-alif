@@ -676,7 +676,7 @@ export const ReceiptModal = ({
       const canvas = document.createElement('canvas');
       canvas.width = W * 2;
       canvas.height = 2000;
-      const ctx = canvas.getContext('2d')!;
+      const ctx = canvas.getContext('2d', { alpha: false })!;
       ctx.scale(2, 2);
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, W, 2000);
@@ -773,7 +773,6 @@ export const ReceiptModal = ({
         });
 
         y += 16;
-        canvas.height = Math.ceil(y * 2);
         canvas.toBlob(blob => resolve(blob), 'image/png');
       };
 
