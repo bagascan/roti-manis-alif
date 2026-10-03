@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { db } from '../db';
-import { Search, Package, TrendingUp, RotateCcw, Calendar, X, Users, ArrowUpDown } from 'lucide-react';
+import { Search, Package, TrendingUp, RotateCcw, Calendar, X, Users, ArrowUpDown, ChevronDown } from 'lucide-react';
 import { formatRupiah, getLocalDateString } from '../utils/formatters';
 
-type SortKey = 'nilaiTerjual' | 'totalTerjual' | 'totalRetur' | 'nilaiRetur' | 'customerName';
+type SortKey = 'tanggalAwal' | 'nilaiTerjual' | 'totalTerjual' | 'totalRetur' | 'nilaiRetur' | 'customerName';
 
 interface ProductStats {
   id: number;
@@ -15,13 +15,24 @@ interface ProductStats {
   nilaiRetur: number;
 }
 
+interface CustomerTransactionDetail {
+  transactionId: number;
+  tanggal: Date;
+  qtyTerjual: number;
+  nilaiTerjual: number;
+  qtyRetur: number;
+  nilaiRetur: number;
+}
+
 interface CustomerProductDetail {
   customerId: number;
   customerName: string;
+  tanggalAwal: number;
   totalTerjual: number;
   totalRetur: number;
   nilaiTerjual: number;
   nilaiRetur: number;
+  transaksi: CustomerTransactionDetail[];
 }
 
 export default function LaporanProdukPage() {
@@ -31,9 +42,10 @@ export default function LaporanProdukPage() {
   const [stats, setStats] = useState<ProductStats[]>([]);
   const [selectedProductForDetail, setSelectedProductForDetail] = useState<ProductStats | null>(null);
   const [customerProductDetails, setCustomerProductDetails] = useState<CustomerProductDetail[]>([]);
-  const [sortKey, setSortKey] = useState<SortKey>('nilaiTerjual');
-  const [sortAsc, setSortAsc] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey>('tanggalAwal');
+  const [sortAsc, setSortAsc] = useState(true);
   const [customerSearch, setCustomerSearch] = useState('');
+  const [expandedCustomerId, setExpandedCustomerId] = useState<number | null>(null);
 
   const loadData = useCallback(async () => {
     const [yearStart, monthStart, dayStart] = startDate.split('-').map(Number);
@@ -80,7 +92,12 @@ export default function LaporanProdukPage() {
       });
     });
 
-    setStats(Object.values(statsMap).sort((a, b) => b.terjual - a.terjual));
+    // Hanya produk yang benar-benar ada transaksi (penjualan atau retur) di periode ini
+setStats(
+      Object.values(statsMap)
+        .filter(p => p.terjual > 0 || p.retur > 0)
+        .sort((a, b) => b.terjual - a.terjual)
+    );
   }, [startDate, endDate]);
 
   const fetchCustomerProductDetails = useCallback(async (productId: number) => {
@@ -101,30 +118,58 @@ export default function LaporanProdukPage() {
     const customerMap: Record<number, CustomerProductDetail> = {};
 
     transactions.forEach(t => {
-      t.items.forEach(item => {
-        if (item.productId === productId) {
-          const customerId = t.customerId || 0; // Use 0 for 'Umum'
-          if (!customerMap[customerId]) {
-            customerMap[customerId] = {
-              customerId: customerId,
-              customerName: customers.find(c => c.id === customerId)?.nama || 'Umum',
-              totalTerjual: 0,
-              totalRetur: 0,
-              nilaiTerjual: 0,
-              nilaiRetur: 0,
-            };
-          }
+      const relevant = t.items.filter(item => item.productId === productId);
+      if (relevant.length === 0) return;
 
-          if (item.subtotal >= 0) {
-            customerMap[customerId].totalTerjual += item.qty;
-            customerMap[customerId].nilaiTerjual += item.subtotal;
-          } else {
-            customerMap[customerId].totalRetur += item.qty;
-            customerMap[customerId].nilaiRetur += Math.abs(item.subtotal);
-          }
+      const customerId = t.customerId || 0; // 0 = pelanggan Umum
+      const tanggalMs = new Date(t.tanggal).getTime();
+
+      if (!customerMap[customerId]) {
+        customerMap[customerId] = {
+          customerId,
+          customerName: customers.find(c => c.id === customerId)?.nama || 'Umum',
+          tanggalAwal: tanggalMs,
+          totalTerjual: 0,
+          totalRetur: 0,
+          nilaiTerjual: 0,
+          nilaiRetur: 0,
+          transaksi: [],
+        };
+      }
+
+      const entry = customerMap[customerId];
+      if (tanggalMs < entry.tanggalAwal) entry.tanggalAwal = tanggalMs;
+
+      const perTransaction: CustomerTransactionDetail = {
+        transactionId: t.id ?? 0,
+        tanggal: new Date(t.tanggal),
+        qtyTerjual: 0,
+        nilaiTerjual: 0,
+        qtyRetur: 0,
+        nilaiRetur: 0,
+      };
+
+      relevant.forEach(item => {
+        if (item.subtotal >= 0) {
+          entry.totalTerjual += item.qty;
+          entry.nilaiTerjual += item.subtotal;
+          perTransaction.qtyTerjual += item.qty;
+          perTransaction.nilaiTerjual += item.subtotal;
+        } else {
+          entry.totalRetur += item.qty;
+          entry.nilaiRetur += Math.abs(item.subtotal);
+          perTransaction.qtyRetur += item.qty;
+          perTransaction.nilaiRetur += Math.abs(item.subtotal);
         }
       });
+
+      entry.transaksi.push(perTransaction);
     });
+
+    Object.values(customerMap).forEach(c => {
+      c.transaksi.sort((a, b) => a.tanggal.getTime() - b.tanggal.getTime());
+    });
+
     setCustomerProductDetails(Object.values(customerMap));
   }, [startDate, endDate]);
 
@@ -133,8 +178,9 @@ export default function LaporanProdukPage() {
   useEffect(() => {
     if (!selectedProductForDetail) {
       setCustomerSearch('');
-      setSortKey('nilaiTerjual');
-      setSortAsc(false);
+      setSortKey('tanggalAwal');
+      setSortAsc(true);
+      setExpandedCustomerId(null);
     }
   }, [selectedProductForDetail]);
 
@@ -152,6 +198,7 @@ export default function LaporanProdukPage() {
   }, [customerProductDetails, sortKey, sortAsc, customerSearch]);
 
   const sortOptions: { key: SortKey; label: string }[] = [
+    { key: 'tanggalAwal', label: 'Transaksi Pertama' },
     { key: 'nilaiTerjual', label: 'Nilai Pembelian' },
     { key: 'totalTerjual', label: 'Jumlah Pembelian' },
     { key: 'totalRetur', label: 'Jumlah Retur' },
@@ -201,31 +248,42 @@ export default function LaporanProdukPage() {
 
       {/* List of Products Stats */}
       <div className="space-y-2 pb-10">
-        {filtered.map(s => (
-          <button key={s.id} onClick={() => handleProductCardClick(s)} className="w-full bg-white border border-stone-100 p-3 rounded-xl shadow-sm text-left active:scale-95 transition-transform">
-            <div className="flex justify-between items-start mb-2">
-              <h3 className="text-sm font-bold text-stone-800">{s.nama}</h3>
-              <span className="text-[10px] font-bold text-stone-400 uppercase bg-stone-50 px-2 py-0.5 rounded">ID: #{s.id}</span>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-stone-50">
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-green-50 text-green-600 rounded-lg"><TrendingUp size={14}/></div>
-                <div>
-                  <p className="text-[9px] text-stone-400 uppercase font-bold">Terjual</p>
-                  <p className="text-xs font-bold text-stone-700">{(s.terjual).toLocaleString('id-ID')} {s.satuan} <span className="text-[10px] text-stone-400 font-medium">(Rp {formatRupiah(s.nilaiTerjual)})</span></p>
+        {filtered.length === 0 ? (
+          <div className="text-center py-12 text-stone-300">
+            <Package size={40} className="mx-auto mb-2 opacity-20" />
+            <p className="text-xs">
+              {searchTerm
+                ? `Produk "${searchTerm}" tidak ditemukan.`
+                : 'Tidak ada produk terjual atau diretur pada periode ini.'}
+            </p>
+          </div>
+        ) : (
+          filtered.map(s => (
+            <button key={s.id} onClick={() => handleProductCardClick(s)} className="w-full bg-white border border-stone-100 p-3 rounded-xl shadow-sm text-left active:scale-95 transition-transform">
+              <div className="flex justify-between items-start mb-2">
+                <h3 className="text-sm font-bold text-stone-800">{s.nama}</h3>
+                <span className="text-[10px] font-bold text-stone-400 uppercase bg-stone-50 px-2 py-0.5 rounded">ID: #{s.id}</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-2 border-t border-stone-50">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-green-50 text-green-600 rounded-lg"><TrendingUp size={14}/></div>
+                  <div>
+                    <p className="text-[9px] text-stone-400 uppercase font-bold">Terjual</p>
+                    <p className="text-xs font-bold text-stone-700">{(s.terjual).toLocaleString('id-ID')} {s.satuan} <span className="text-[10px] text-stone-400 font-medium">(Rp {formatRupiah(s.nilaiTerjual)})</span></p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-rose-50 text-rose-600 rounded-lg"><RotateCcw size={14}/></div>
+                  <div>
+                    <p className="text-[9px] text-stone-400 uppercase font-bold">Retur</p>
+                    <p className="text-xs font-bold text-stone-700">{(s.retur).toLocaleString('id-ID')} {s.satuan} <span className="text-[10px] text-stone-400 font-medium">(Rp {formatRupiah(s.nilaiRetur)})</span></p>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-rose-50 text-rose-600 rounded-lg"><RotateCcw size={14}/></div>
-                <div>
-                  <p className="text-[9px] text-stone-400 uppercase font-bold">Retur</p>
-                  <p className="text-xs font-bold text-stone-700">{(s.retur).toLocaleString('id-ID')} {s.satuan} <span className="text-[10px] text-stone-400 font-medium">(Rp {formatRupiah(s.nilaiRetur)})</span></p>
-                </div>
-              </div>
-            </div>
-          </button>
-        ))}
+            </button>
+          ))
+        )}
       </div>
        {/* Customer Detail Modal */}
       {selectedProductForDetail && (
@@ -256,7 +314,11 @@ export default function LaporanProdukPage() {
                       key={opt.key}
                       onClick={() => {
                         if (sortKey === opt.key) setSortAsc(prev => !prev);
-                        else { setSortKey(opt.key); setSortAsc(false); }
+                        else {
+                          setSortKey(opt.key);
+                          // Tanggal & nama ascend = paling lama/tertua dulu
+                          setSortAsc(opt.key === 'tanggalAwal' || opt.key === 'customerName');
+                        }
                       }}
                       className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold whitespace-nowrap transition-colors ${
                         sortKey === opt.key ? 'bg-teal-600 text-white' : 'bg-white text-stone-500 border border-stone-200'
@@ -281,27 +343,80 @@ export default function LaporanProdukPage() {
                   <p className="text-xs">Pelanggan "{customerSearch}" tidak ditemukan.</p>
                 </div>
               ) : (
-                sortedCustomers.map(customer => (
-                  <div key={customer.customerId} className="bg-stone-50 p-3 rounded-xl border border-stone-100">
-                    <h4 className="text-sm font-bold text-stone-800 mb-2">{customer.customerName}</h4>
-                    <div className="grid grid-cols-2 gap-3 pt-2 border-t border-stone-50">
-                      <div className="flex items-center gap-2">
-                        <div className="p-1.5 bg-green-50 text-green-600 rounded-lg"><TrendingUp size={14}/></div>
-                        <div>
-                          <p className="text-[9px] text-stone-400 uppercase font-bold">Terjual</p>
-                          <p className="text-xs font-bold text-stone-700">{customer.totalTerjual.toLocaleString('id-ID')} {selectedProductForDetail.satuan} <span className="text-[10px] text-stone-400 font-medium">(Rp {formatRupiah(customer.nilaiTerjual)})</span></p>
+                sortedCustomers.map(customer => {
+                  const isExpanded = expandedCustomerId === customer.customerId;
+                  const firstDate = new Date(customer.tanggalAwal);
+                  return (
+                    <div key={customer.customerId} className="bg-stone-50 rounded-xl border border-stone-100 overflow-hidden">
+                      <button
+                        onClick={() => setExpandedCustomerId(isExpanded ? null : customer.customerId)}
+                        className="w-full p-3 text-left active:scale-[0.99] transition-transform"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <h4 className="text-sm font-bold text-stone-800 truncate">{customer.customerName}</h4>
+                            <p className="text-[10px] text-stone-400 mt-0.5">
+                              {customer.transaksi.length} transaksi · pertama {firstDate.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </p>
+                          </div>
+                          <ChevronDown size={16} className={`text-stone-400 flex-shrink-0 mt-0.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                         </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="p-1.5 bg-rose-50 text-rose-600 rounded-lg"><RotateCcw size={14}/></div>
-                        <div>
-                          <p className="text-[9px] text-stone-400 uppercase font-bold">Retur</p>
-                          <p className="text-xs font-bold text-stone-700">{customer.totalRetur.toLocaleString('id-ID')} {selectedProductForDetail.satuan} <span className="text-[10px] text-stone-400 font-medium">(Rp {formatRupiah(customer.nilaiRetur)})</span></p>
+                        <div className="grid grid-cols-2 gap-3 mt-2 pt-2 border-t border-stone-200/60">
+                          <div className="flex items-center gap-2">
+                            <div className="p-1.5 bg-green-50 text-green-600 rounded-lg"><TrendingUp size={14}/></div>
+                            <div>
+                              <p className="text-[9px] text-stone-400 uppercase font-bold">Terjual</p>
+                              <p className="text-xs font-bold text-stone-700">{customer.totalTerjual.toLocaleString('id-ID')} {selectedProductForDetail.satuan} <span className="text-[10px] text-stone-400 font-medium">(Rp {formatRupiah(customer.nilaiTerjual)})</span></p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="p-1.5 bg-rose-50 text-rose-600 rounded-lg"><RotateCcw size={14}/></div>
+                            <div>
+                              <p className="text-[9px] text-stone-400 uppercase font-bold">Retur</p>
+                              <p className="text-xs font-bold text-stone-700">{customer.totalRetur.toLocaleString('id-ID')} {selectedProductForDetail.satuan} <span className="text-[10px] text-stone-400 font-medium">(Rp {formatRupiah(customer.nilaiRetur)})</span></p>
+                            </div>
+                          </div>
                         </div>
-                      </div>
+                      </button>
+
+                      {isExpanded && (
+                        <div className="px-3 pb-3 pt-1 border-t border-stone-200/60">
+                          <p className="text-[9px] font-bold uppercase text-stone-400 mb-1.5">
+                            Rincian Transaksi ({customer.transaksi.length})
+                          </p>
+                          <div className="space-y-1">
+                            {customer.transaksi.map((trx, idx) => (
+                              <div key={`trx-${trx.transactionId}-${idx}`} className="bg-white rounded-lg border border-stone-100 p-2">
+                                <div className="flex justify-between items-baseline">
+                                  <span className="text-[10px] font-bold text-stone-700">
+                                    <span className="text-stone-400 font-normal">#{idx + 1}</span>{' '}
+                                    {trx.tanggal.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                    <span className="text-stone-400 font-normal ml-1">{trx.tanggal.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
+                                  </span>
+                                  <span className="text-[10px] text-stone-400 font-normal">#{trx.transactionId}</span>
+                                </div>
+                                <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1">
+                                  {trx.qtyTerjual > 0 && (
+                                    <span className="text-[10px] font-bold text-green-600">
+                                      +{trx.qtyTerjual.toLocaleString('id-ID')} {selectedProductForDetail.satuan}
+                                      <span className="text-stone-400 font-normal"> (Rp {formatRupiah(trx.nilaiTerjual)})</span>
+                                    </span>
+                                  )}
+                                  {trx.qtyRetur > 0 && (
+                                    <span className="text-[10px] font-bold text-rose-600">
+                                      -{trx.qtyRetur.toLocaleString('id-ID')} {selectedProductForDetail.satuan}
+                                      <span className="text-stone-400 font-normal"> (Rp {formatRupiah(trx.nilaiRetur)})</span>
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
