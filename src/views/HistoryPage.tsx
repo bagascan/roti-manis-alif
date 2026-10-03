@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { db, type Transaction, type Customer, type Product } from '../db';
 import { Search, History, Calendar, User, X, Edit3, Trash2, CheckCircle2, AlertCircle, Printer, Wallet, RefreshCw, ArrowLeftRight } from 'lucide-react';
 import { formatRupiah, parseRupiah } from '../utils/formatters';
-import { getPaymentHistory, getRemainingDebt, syncPayments } from '../utils/payments';
+import { getPaymentHistory, getRemainingDebt } from '../utils/payments';
 
 
 // Define enriched types for display

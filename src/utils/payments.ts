@@ -1,8 +1,13 @@
-import type { PaymentRecord, Transaction } from '../db';
+import type { PaymentRecord } from '../db';
 
 export type { PaymentRecord };
 
-type PayableTransaction = Pick<Transaction, 'tanggal' | 'total' | 'bayar' | 'payments'>;
+type PayableTransaction = {
+  tanggal: string | number | Date;
+  total: number;
+  bayar: number;
+  payments?: PaymentRecord[];
+};
 
 /**
  * Mengembalikan riwayat pembayaran sebuah transaksi, selalu terurut dari yang pertama.
@@ -14,12 +19,13 @@ type PayableTransaction = Pick<Transaction, 'tanggal' | 'total' | 'bayar' | 'pay
 export function getPaymentHistory(transaction: PayableTransaction): PaymentRecord[] {
   const total = transaction.total || 0;
   const bayar = transaction.bayar || 0;
+  const txnDate = new Date(transaction.tanggal);
 
   if (transaction.payments && transaction.payments.length > 0) {
     return [...transaction.payments]
       .filter(p => p && typeof p.jumlah === 'number')
       .map(p => ({
-        tanggal: p.tanggal ? new Date(p.tanggal) : transaction.tanggal,
+        tanggal: p.tanggal ? new Date(p.tanggal) : txnDate,
         jumlah: p.jumlah,
         sisa: p.sisa ?? 0
       }))
@@ -30,7 +36,7 @@ export function getPaymentHistory(transaction: PayableTransaction): PaymentRecor
 
   return [
     {
-      tanggal: transaction.tanggal,
+      tanggal: txnDate,
       jumlah: Math.min(bayar, total),
       sisa: Math.max(0, total - bayar)
     }
