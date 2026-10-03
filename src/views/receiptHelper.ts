@@ -2,6 +2,7 @@
  * Helper untuk memformat struk belanja printer thermal (58mm / 32 Karakter)
  */
 import { formatRupiah } from '../utils/formatters';
+import { getPaymentHistory, getRemainingDebt, type PaymentRecord } from '../utils/payments';
 
 const MAX_CHAR = 32;
 
@@ -21,6 +22,7 @@ interface Transaction {
   status: 'lunas' | 'belum_lunas';
   total: number;
   bayar: number;
+  payments?: PaymentRecord[];
 }
 
 export const receiptHelper = {
@@ -97,16 +99,43 @@ export const receiptHelper = {
     }
 
     res.push(receiptHelper.justify("TOTAL:", `Rp ${formatRupiah(transaction.total)}`));
-    res.push(receiptHelper.justify("BAYAR:", `Rp ${formatRupiah(transaction.bayar)}`));
-    
-    if (transaction.status === 'belum_lunas') {
-      const sisa = transaction.total - (transaction.bayar || 0);
-      res.push(receiptHelper.justify("KURANG:", `- Rp ${formatRupiah(sisa)}`));
-    }
 
     if (transaction.bayar > transaction.total) {
       const kembalian = transaction.bayar - transaction.total;
       res.push(receiptHelper.justify("KEMBALI:", `Rp ${formatRupiah(kembalian)}`));
+    }
+
+    const paymentHistory = getPaymentHistory(transaction);
+    const remainingDebt = getRemainingDebt(transaction);
+
+    if (paymentHistory.length > 0) {
+      res.push(receiptHelper.divider);
+      res.push(receiptHelper.center(`RIWAYAT BAYAR (${paymentHistory.length}x)`));
+
+      paymentHistory.forEach((payment, idx) => {
+        const isLast = idx === paymentHistory.length - 1;
+        const isPaidOff = isLast && payment.sisa <= 0;
+        const tgl = new Date(payment.tanggal).toLocaleDateString("id-ID", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        });
+        res.push(receiptHelper.justify(`#${idx + 1} ${tgl}`, `Rp ${formatRupiah(payment.jumlah)}`));
+        res.push(
+          receiptHelper.justify(
+            isPaidOff ? "Status" : `Sisa stlh ke-${idx + 1}`,
+            isPaidOff ? "LUNAS" : `-Rp ${formatRupiah(payment.sisa)}`
+          )
+        );
+      });
+
+      res.push(receiptHelper.divider);
+      res.push(receiptHelper.justify("TOTAL BAYAR:", `Rp ${formatRupiah(transaction.bayar)}`));
+      if (remainingDebt > 0) {
+        res.push(receiptHelper.justify("SISA HUTANG:", `Rp ${formatRupiah(remainingDebt)}`));
+      }
+    } else if (transaction.status === 'belum_lunas') {
+      res.push(receiptHelper.justify("KURANG:", `- Rp ${formatRupiah(remainingDebt)}`));
     }
 
     res.push("");

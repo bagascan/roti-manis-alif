@@ -119,6 +119,12 @@ export default function SettingsPage({ isPrinterReady, printerAddress, onSearchB
         for (const [tableName, rows] of Object.entries(raw)) {
           data[tableName] = (rows as Record<string, unknown>[]).map(row => {
             if (typeof row.tanggal === 'string') row.tanggal = new Date(row.tanggal);
+            if (Array.isArray(row.payments)) {
+              row.payments = (row.payments as Record<string, unknown>[]).map(p => {
+                if (typeof p.tanggal === 'string') p.tanggal = new Date(p.tanggal);
+                return p;
+              });
+            }
             return row;
           });
         }

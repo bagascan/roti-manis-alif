@@ -31,6 +31,12 @@ export interface Customer {
   hutang: number;
 }
 
+export interface PaymentRecord {
+  tanggal: Date;
+  jumlah: number;
+  sisa: number;
+}
+
 export interface Transaction {
   id?: number;
   tanggal: Date;
@@ -41,6 +47,9 @@ export interface Transaction {
   status: 'lunas' | 'belum_lunas';
   // unit: 'satuan' merujuk pada Pack, 'pcs' merujuk pada bijian
   items: { productId: number; qty: number; unit: 'satuan' | 'pcs'; harga: number; hargaBeli: number; subtotal: number }[];
+  // Riwayat tiap pembayaran (transaksi awal + setiap cicilan pelunasan)
+  // Tidak wajib (undefined) untuk data lama sebelum fitur ini ada.
+  payments?: PaymentRecord[];
 }
 
 export interface Restock {

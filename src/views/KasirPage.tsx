@@ -15,6 +15,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { formatRupiah, parseRupiah } from '../utils/formatters';
+import { buildInitialPayments, syncPayments } from '../utils/payments';
 
 interface CartItem extends Product {
   cartQty: number;
@@ -215,14 +216,18 @@ export default function KasirPage({ editData, isPrinterReady, onSearchBluetooth,
           });
         }
 
+        const transactionDate = new Date();
         const payload: Transaction = {
-          tanggal: new Date(),
+          tanggal: transactionDate,
           customerId: selectedCustomer || undefined,
           tipe: mode,
           total: totalCart,
           bayar: jumlahBayar,
           status: status,
-          items: transactionItems
+          items: transactionItems,
+          payments: editData?.id
+            ? syncPayments(editData.payments, transactionDate, totalCart, jumlahBayar)
+            : buildInitialPayments(transactionDate, totalCart, jumlahBayar)
         };
 
         if (selectedCustomer && status === 'belum_lunas') {

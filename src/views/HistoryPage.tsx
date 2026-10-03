@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { db, type Transaction, type Customer, type Product } from '../db';
 import { Search, History, Calendar, User, X, Edit3, Trash2, CheckCircle2, AlertCircle, Printer, Wallet, RefreshCw, ArrowLeftRight } from 'lucide-react';
 import { formatRupiah, parseRupiah } from '../utils/formatters';
+import { getPaymentHistory, getRemainingDebt, syncPayments } from '../utils/payments';
 
 
 // Define enriched types for display
@@ -214,15 +215,28 @@ export default function HistoryPage({ isPrinterReady, onPrint, onSearchBluetooth
 
   const confirmPelunasan = async () => {
     if (!pelunasanData.transaction) return;
-    
+    if (pelunasanData.amount <= 0) return;
+
     try {
+      const trx = pelunasanData.transaction!;
       await db.transaction('rw', [db.transactions, db.customers], async () => {
-        const newBayar = (pelunasanData.transaction!.bayar || 0) + pelunasanData.amount;
-        const newStatus = newBayar >= pelunasanData.transaction!.total ? 'lunas' : 'belum_lunas';
-        await db.transactions.update(pelunasanData.transaction!.id!, { bayar: newBayar, status: newStatus });
-        
-        if (pelunasanData.transaction!.customerId) {
-          const cust = await db.customers.get(pelunasanData.transaction!.customerId);
+        const now = new Date();
+        const newBayar = (trx.bayar || 0) + pelunasanData.amount;
+        const newStatus = newBayar >= trx.total ? 'lunas' : 'belum_lunas';
+
+        const existing = getPaymentHistory(trx);
+
+        await db.transactions.update(trx.id!, {
+          bayar: newBayar,
+          status: newStatus,
+          payments: [
+            ...existing,
+            { tanggal: now, jumlah: pelunasanData.amount, sisa: Math.max(0, trx.total - newBayar) }
+          ]
+        });
+
+        if (trx.customerId) {
+          const cust = await db.customers.get(trx.customerId);
           if (cust) {
             await db.customers.update(cust.id!, { hutang: Math.max(0, (cust.hutang || 0) - pelunasanData.amount) });
           }
@@ -309,6 +323,12 @@ export default function HistoryPage({ isPrinterReady, onPrint, onSearchBluetooth
       showToast('Gagal memproses transfer!', 'error');
     }
   };
+
+  const detailPaymentHistory = useMemo(
+    () => (detailTransaction ? getPaymentHistory(detailTransaction) : []),
+    [detailTransaction]
+  );
+  const detailRemainingDebt = detailTransaction ? getRemainingDebt(detailTransaction) : 0;
 
   return (
     <main className="flex-1 overflow-y-auto p-4 bg-stone-50">
@@ -506,12 +526,44 @@ export default function HistoryPage({ isPrinterReady, onPrint, onSearchBluetooth
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-xs font-bold text-stone-400 uppercase">Telah Dibayar</span>
-                <span className="text-sm font-bold text-green-600">Rp {formatRupiah(detailTransaction.bayar || detailTransaction.total)}</span>
+                <span className="text-sm font-bold text-green-600">Rp {formatRupiah(detailTransaction.bayar || 0)}</span>
               </div>
+
+              {detailPaymentHistory.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-stone-200 space-y-2">
+                  <p className="text-[10px] font-bold uppercase text-stone-400">
+                    Riwayat Pembayaran ({detailPaymentHistory.length}x)
+                  </p>
+                  {detailPaymentHistory.map((payment, idx) => {
+                    const isLast = idx === detailPaymentHistory.length - 1;
+                    const isPaidOff = isLast && payment.sisa <= 0;
+                    return (
+                      <div key={`detail-payment-${idx}`} className="bg-white rounded-xl border border-stone-100 p-2.5">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-bold text-stone-700">
+                            Bayar ke-{idx + 1}
+                            <span className="font-normal text-stone-400 ml-1.5">
+                              {new Date(payment.tanggal).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </span>
+                          </span>
+                          <span className="text-xs font-bold text-green-600">Rp {formatRupiah(payment.jumlah)}</span>
+                        </div>
+                        <div className="flex justify-between items-center mt-1">
+                          <span className="text-[10px] text-stone-400">{isPaidOff ? 'Status' : `Sisa setelah bayar ke-${idx + 1}`}</span>
+                          <span className={`text-[10px] font-bold ${isPaidOff ? 'text-emerald-600' : 'text-rose-600'}`}>
+                            {isPaidOff ? 'LUNAS' : `- Rp ${formatRupiah(payment.sisa)}`}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
               {detailTransaction.status === 'belum_lunas' && (
                 <div className="flex justify-between items-center pt-2 border-t border-stone-200">
                   <span className="text-sm font-bold text-stone-600">Sisa Piutang</span>
-                  <span className="text-lg font-black text-rose-600">Rp {formatRupiah(detailTransaction.total - (detailTransaction.bayar || 0))}</span>
+                  <span className="text-lg font-black text-rose-600">Rp {formatRupiah(detailRemainingDebt)}</span>
                 </div>
               )}
               {detailTransaction.status === 'belum_lunas' && (
@@ -666,6 +718,12 @@ export const ReceiptModal = ({
   const totalSales = salesItems.reduce((acc, item) => acc + item.subtotal, 0);
   const totalReturns = returnItems.reduce((acc, item) => acc + Math.abs(item.subtotal), 0);
 
+  const paymentHistory = getPaymentHistory(transaction);
+  const remainingDebt = getRemainingDebt(transaction);
+  const hasPaymentHistory = paymentHistory.length > 0;
+  const paymentDateFormatter = (date: Date) =>
+    new Date(date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
+
   const renderReceiptCanvas = (): Promise<Blob | null> => {
     return new Promise(resolve => {
       const W = 400;
@@ -761,15 +819,39 @@ export const ReceiptModal = ({
         }
         row('TOTAL:', `Rp ${formatRupiah(transaction.total)}`, y, true, '#000');
         y += 18;
-        row('BAYAR:', `Rp ${formatRupiah(transaction.bayar || 0)}`, y, false, '#000');
-        y += 16;
-
-        if (transaction.status === 'belum_lunas') {
-          row('KURANG:', `- Rp ${formatRupiah(transaction.total - (transaction.bayar || 0))}`, y, true, '#e11d48', '#e11d48');
-          y += 16;
-        }
         if ((transaction.bayar || 0) > transaction.total) {
           row('KEMBALI:', `Rp ${formatRupiah((transaction.bayar || 0) - transaction.total)}`, y, false, '#000');
+          y += 16;
+        }
+
+        if (hasPaymentHistory) {
+          sep(y); y += 6;
+          center(`RIWAYAT PEMBAYARAN (${paymentHistory.length}x)`, y, true, '#000', 12);
+          y += 18;
+          paymentHistory.forEach((payment, idx) => {
+            const isLast = idx === paymentHistory.length - 1;
+            const isPaidOff = isLast && payment.sisa <= 0;
+            row(`#${idx + 1} ${paymentDateFormatter(payment.tanggal)}`, `Rp ${formatRupiah(payment.jumlah)}`, y, true, '#000');
+            y += 14;
+            row(
+              isPaidOff ? 'Status' : `Sisa setelah ke-${idx + 1}`,
+              isPaidOff ? 'LUNAS' : `- Rp ${formatRupiah(payment.sisa)}`,
+              y,
+              false,
+              isPaidOff ? '#059669' : '#e11d48',
+              '#78716c'
+            );
+            y += 17;
+          });
+          sep(y); y += 6;
+          row('TOTAL DIBAYAR', `Rp ${formatRupiah(transaction.bayar || 0)}`, y, true, '#000');
+          y += 16;
+          if (remainingDebt > 0) {
+            row('SISA PIUTANG', `Rp ${formatRupiah(remainingDebt)}`, y, true, '#e11d48', '#e11d48');
+            y += 16;
+          }
+        } else if (transaction.status === 'belum_lunas') {
+          row('KURANG:', `- Rp ${formatRupiah(remainingDebt)}`, y, true, '#e11d48', '#e11d48');
           y += 16;
         }
 
@@ -907,22 +989,61 @@ export const ReceiptModal = ({
             <span>TOTAL:</span>
             <span>Rp {formatRupiah(transaction.total)}</span>
           </div>
-          <div className="flex justify-between">
-            <span>BAYAR:</span>
-            <span>Rp {formatRupiah(transaction.bayar || 0)}</span>
-          </div>
-          {transaction.status === 'belum_lunas' && (
-            <div className="flex justify-between text-rose-600 font-bold">
-              <span>KURANG:</span>
-              <span>- Rp {formatRupiah(transaction.total - (transaction.bayar || 0))}</span>
-            </div>
-          )}
           {transaction.bayar > transaction.total && (
             <div className="flex justify-between">
               <span>KEMBALI:</span>
               <span>Rp {formatRupiah(transaction.bayar - transaction.total)}</span>
             </div>
           )}
+
+          {hasPaymentHistory && (
+            <div className="mt-3 pt-3 border-t border-stone-200 space-y-1.5">
+              <p className="text-[10px] font-bold uppercase text-stone-500">
+                Riwayat Pembayaran ({paymentHistory.length}x)
+              </p>
+              {paymentHistory.map((payment, idx) => {
+                const isLast = idx === paymentHistory.length - 1;
+                const isPaidOff = isLast && payment.sisa <= 0;
+                return (
+                  <div key={`payment-${idx}`} className="text-[10px]">
+                    <div className="flex justify-between items-baseline">
+                      <span className="text-stone-500">
+                        <span className="font-bold text-stone-700">#{idx + 1}</span>{' '}
+                        {paymentDateFormatter(payment.tanggal)}
+                      </span>
+                      <span className="font-bold text-stone-800">Rp {formatRupiah(payment.jumlah)}</span>
+                    </div>
+                    <div className="flex justify-between items-baseline">
+                      <span className="text-stone-400">
+                        {isPaidOff ? 'Status' : 'Sisa setelah bayar ke-' + (idx + 1)}
+                      </span>
+                      <span className={isPaidOff ? 'font-bold text-emerald-600' : 'text-rose-600'}>
+                        {isPaidOff ? 'LUNAS' : `- Rp ${formatRupiah(payment.sisa)}`}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="flex justify-between items-baseline text-[10px] pt-1 border-t border-dashed border-stone-200">
+                <span className="font-bold">TOTAL DIBAYAR</span>
+                <span className="font-bold">Rp {formatRupiah(transaction.bayar || 0)}</span>
+              </div>
+              {remainingDebt > 0 && (
+                <div className="flex justify-between items-baseline text-[10px]">
+                  <span className="font-bold text-rose-600">SISA PIUTANG</span>
+                  <span className="font-bold text-rose-600">Rp {formatRupiah(remainingDebt)}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!hasPaymentHistory && transaction.status === 'belum_lunas' && (
+            <div className="flex justify-between text-rose-600 font-bold">
+              <span>KURANG:</span>
+              <span>- Rp {formatRupiah(remainingDebt)}</span>
+            </div>
+          )}
+
           <div className="text-center mt-4 text-[10px] text-stone-600 whitespace-pre-line leading-tight">
             {localStorage.getItem('receipt_footer') || 'Terima Kasih Atas\nKunjungan Anda'}
           </div>
