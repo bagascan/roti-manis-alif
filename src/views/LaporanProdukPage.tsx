@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { db } from '../db';
-import { Search, Package, TrendingUp, RotateCcw, Calendar, X, Users } from 'lucide-react';
+import { Search, Package, TrendingUp, RotateCcw, Calendar, X, Users, ArrowUpDown } from 'lucide-react';
 import { formatRupiah, getLocalDateString } from '../utils/formatters';
+
+type SortKey = 'nilaiTerjual' | 'totalTerjual' | 'totalRetur' | 'nilaiRetur' | 'customerName';
 
 interface ProductStats {
   id: number;
@@ -29,6 +31,9 @@ export default function LaporanProdukPage() {
   const [stats, setStats] = useState<ProductStats[]>([]);
   const [selectedProductForDetail, setSelectedProductForDetail] = useState<ProductStats | null>(null);
   const [customerProductDetails, setCustomerProductDetails] = useState<CustomerProductDetail[]>([]);
+  const [sortKey, setSortKey] = useState<SortKey>('nilaiTerjual');
+  const [sortAsc, setSortAsc] = useState(false);
+  const [customerSearch, setCustomerSearch] = useState('');
 
   const loadData = useCallback(async () => {
     const [yearStart, monthStart, dayStart] = startDate.split('-').map(Number);
@@ -120,10 +125,39 @@ export default function LaporanProdukPage() {
         }
       });
     });
-    setCustomerProductDetails(Object.values(customerMap).sort((a, b) => b.nilaiTerjual - a.nilaiTerjual));
+    setCustomerProductDetails(Object.values(customerMap));
   }, [startDate, endDate]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  useEffect(() => {
+    if (!selectedProductForDetail) {
+      setCustomerSearch('');
+      setSortKey('nilaiTerjual');
+      setSortAsc(false);
+    }
+  }, [selectedProductForDetail]);
+
+  const sortedCustomers = useMemo(() => {
+    const search = customerSearch.toLowerCase().trim();
+    const filteredList = search
+      ? customerProductDetails.filter(c => c.customerName.toLowerCase().includes(search))
+      : customerProductDetails;
+
+    const dir = sortAsc ? 1 : -1;
+    return [...filteredList].sort((a, b) => {
+      if (sortKey === 'customerName') return a.customerName.localeCompare(b.customerName, 'id') * dir;
+      return ((a[sortKey] as number) - (b[sortKey] as number)) * dir;
+    });
+  }, [customerProductDetails, sortKey, sortAsc, customerSearch]);
+
+  const sortOptions: { key: SortKey; label: string }[] = [
+    { key: 'nilaiTerjual', label: 'Nilai Pembelian' },
+    { key: 'totalTerjual', label: 'Jumlah Pembelian' },
+    { key: 'totalRetur', label: 'Jumlah Retur' },
+    { key: 'nilaiRetur', label: 'Nilai Retur' },
+    { key: 'customerName', label: 'Nama Pelanggan' },
+  ];
 
   const filtered = useMemo(() => 
     stats.filter(s => s.nama.toLowerCase().includes(searchTerm.toLowerCase())),
@@ -204,14 +238,50 @@ export default function LaporanProdukPage() {
               </div>
               <button onClick={() => setSelectedProductForDetail(null)} className="p-1.5 bg-stone-100 rounded-full text-stone-400"><X size={16} /></button>
             </div>
+            {customerProductDetails.length > 0 && (
+              <div className="px-4 py-3 border-b bg-stone-50 space-y-2">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={14} />
+                  <input
+                    type="text"
+                    placeholder="Cari pelanggan..."
+                    value={customerSearch}
+                    onChange={e => setCustomerSearch(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 bg-white border border-stone-200 rounded-xl text-xs outline-none"
+                  />
+                </div>
+                <div className="flex gap-1.5 overflow-x-auto pb-1">
+                  {sortOptions.map(opt => (
+                    <button
+                      key={opt.key}
+                      onClick={() => {
+                        if (sortKey === opt.key) setSortAsc(prev => !prev);
+                        else { setSortKey(opt.key); setSortAsc(false); }
+                      }}
+                      className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold whitespace-nowrap transition-colors ${
+                        sortKey === opt.key ? 'bg-teal-600 text-white' : 'bg-white text-stone-500 border border-stone-200'
+                      }`}
+                    >
+                      {opt.label}
+                      {sortKey === opt.key && (sortAsc ? <ArrowUpDown size={10} /> : <ArrowUpDown size={10} className="rotate-180" />)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
               {customerProductDetails.length === 0 ? (
                 <div className="text-center py-10 text-stone-300">
                   <Users size={40} className="mx-auto mb-2 opacity-20" />
                   <p className="text-xs">Tidak ada data pelanggan untuk produk ini.</p>
                 </div>
+              ) : sortedCustomers.length === 0 ? (
+                <div className="text-center py-10 text-stone-300">
+                  <Search size={40} className="mx-auto mb-2 opacity-20" />
+                  <p className="text-xs">Pelanggan "{customerSearch}" tidak ditemukan.</p>
+                </div>
               ) : (
-                customerProductDetails.map(customer => (
+                sortedCustomers.map(customer => (
                   <div key={customer.customerId} className="bg-stone-50 p-3 rounded-xl border border-stone-100">
                     <h4 className="text-sm font-bold text-stone-800 mb-2">{customer.customerName}</h4>
                     <div className="grid grid-cols-2 gap-3 pt-2 border-t border-stone-50">
@@ -219,14 +289,14 @@ export default function LaporanProdukPage() {
                         <div className="p-1.5 bg-green-50 text-green-600 rounded-lg"><TrendingUp size={14}/></div>
                         <div>
                           <p className="text-[9px] text-stone-400 uppercase font-bold">Terjual</p>
-                          <p className="text-xs font-bold text-stone-700">{customer.totalTerjual} {selectedProductForDetail.satuan} <span className="text-[10px] text-stone-400 font-medium">(Rp {formatRupiah(customer.nilaiTerjual)})</span></p>
+                          <p className="text-xs font-bold text-stone-700">{customer.totalTerjual.toLocaleString('id-ID')} {selectedProductForDetail.satuan} <span className="text-[10px] text-stone-400 font-medium">(Rp {formatRupiah(customer.nilaiTerjual)})</span></p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
                         <div className="p-1.5 bg-rose-50 text-rose-600 rounded-lg"><RotateCcw size={14}/></div>
                         <div>
                           <p className="text-[9px] text-stone-400 uppercase font-bold">Retur</p>
-                          <p className="text-xs font-bold text-stone-700">{customer.totalRetur} {selectedProductForDetail.satuan} <span className="text-[10px] text-stone-400 font-medium">(Rp {formatRupiah(customer.nilaiRetur)})</span></p>
+                          <p className="text-xs font-bold text-stone-700">{customer.totalRetur.toLocaleString('id-ID')} {selectedProductForDetail.satuan} <span className="text-[10px] text-stone-400 font-medium">(Rp {formatRupiah(customer.nilaiRetur)})</span></p>
                         </div>
                       </div>
                     </div>
